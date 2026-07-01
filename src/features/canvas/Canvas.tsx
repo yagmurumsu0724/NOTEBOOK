@@ -16,6 +16,7 @@ import { RulerTool } from './components/RulerTool';
 import { HANDWRITING_FONTS, loadFont } from './fonts';
 import { getStroke } from 'perfect-freehand';
 import { AIHandwritingEngine } from './utils/aiHandwritingEngine';
+import { AIInsightPanel } from '../ai/components/AIInsightPanel';
 import './Canvas.css';
 
 const EMPTY_ELEMENTS: CanvasElement[] = [];
@@ -62,6 +63,7 @@ export const Canvas: React.FC = () => {
   const [isStickersOpen, setIsStickersOpen] = useState(false);
   const [isBackgroundsOpen, setIsBackgroundsOpen] = useState(false);
   const [isPenSettingsOpen, setIsPenSettingsOpen] = useState(false);
+  const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, id: string} | null>(null);
   
   const aiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -915,6 +917,12 @@ export const Canvas: React.FC = () => {
         <IconButton icon={<ArrowLeft size={20} />} onClick={() => navigate('/dashboard')} style={{ marginRight: '1rem' }} />
         <div style={{ fontWeight: 600 }}>Defter: {notebookId}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+           <IconButton 
+             icon={<span style={{ fontSize: '16px' }}>✨</span>} 
+             onClick={() => setIsAIInsightOpen(true)} 
+             variant="ghost" 
+             title="AI Analiz" 
+           />
            <IconButton icon={<Download size={20} />} onClick={handleExport} variant="ghost" title="Resim Olarak İndir" />
            <IconButton icon={<Trash2 size={20} color="var(--color-sakura)" />} onClick={handleClear} variant="ghost" title="Tuvali Temizle" />
         </div>
@@ -980,6 +988,25 @@ export const Canvas: React.FC = () => {
       <PenSettingsModal
         isOpen={isPenSettingsOpen}
         onClose={() => setIsPenSettingsOpen(false)}
+      />
+
+      <AIInsightPanel
+        isOpen={isAIInsightOpen}
+        onClose={() => setIsAIInsightOpen(false)}
+        noteContent={
+          elements
+            .filter(el => el.type === 'text' && el.content)
+            .map(el => el.content)
+            .join('\n\n')
+        }
+        onApplyTags={(tags) => {
+          if (notebookId) {
+            const notebook = useStore.getState().notebooks.find(n => n.id === notebookId);
+            const existingTags = notebook?.tags || [];
+            const mergedTags = Array.from(new Set([...existingTags, ...tags]));
+            useStore.getState().updateNotebook(notebookId, { tags: mergedTags });
+          }
+        }}
       />
 
       {/* Context Menu */}
