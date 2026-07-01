@@ -55,6 +55,7 @@ export const Canvas: React.FC = () => {
   const { notebookId } = useParams<{ notebookId: string }>();
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const committedCanvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -90,9 +91,20 @@ export const Canvas: React.FC = () => {
 
   const isPanning = useRef(false);
   const isDrawing = useRef(false);
-  const needsRender = useRef(true); 
+  
+  // High-performance layered render dirty flags
   const needsBgRender = useRef(true);
-  const smootherRef = useRef(new StrokeSmoother());
+  const needsCommittedRender = useRef(true);
+  const needsActiveRender = useRef(true);
+  const needsRender = {
+    get current() { return needsCommittedRender.current; },
+    set current(val) {
+      needsCommittedRender.current = val;
+      needsActiveRender.current = val;
+    }
+  };
+  
+  const cameraRef = useRef({ x: 0, y: 0, z: 1 });
   const lastMousePos = useRef({ x: 0, y: 0 });
   const strokesRef = useRef<Stroke[]>([]);
   const activeStrokeRef = useRef<Stroke | null>(null);
@@ -116,10 +128,19 @@ export const Canvas: React.FC = () => {
       strokesRef.current = migrateStrokes(useCanvasStore.getState().notebookStrokes[notebookId] || []);
       const title = useStore.getState().notebooks.find(n => n.id === notebookId)?.title || 'Sayfa';
       document.title = `KawaiiNote | ${title}`;
-      needsRender.current = true;
       needsBgRender.current = true;
+      needsCommittedRender.current = true;
+      needsActiveRender.current = true;
     }
   }, [notebookId]);
+
+  // Keep cameraRef in sync without triggering full rAF teardown
+  useEffect(() => {
+    cameraRef.current = camera;
+    needsBgRender.current = true;
+    needsCommittedRender.current = true;
+    needsActiveRender.current = true;
+  }, [camera]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -284,82 +305,102 @@ export const Canvas: React.FC = () => {
     link.click();
   };
 
+  const drawSingleStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
+    const globalPenSettings = useCanvasStore.getState().penSettings;
+    
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = stroke.brush?.color || stroke.color || '#000';
+    
+    let finalSize = (stroke.brush?.size || stroke.size || 4) * (globalPenSettings.size / 4);
+    let thinning = globalPenSettings.thinning;
+    let streamline = globalPenSettings.streamline;
+    let smoothing = stroke.brush?.smoothing ?? globalPenSettings.smoothing;
+    
+    if (stroke.tool === 'eraser') {
+      const type = useCanvasStore.getState().eraserType;
+      if (stroke === activeStrokeRef.current && type === 'lasso') {
+         ctx.globalCompositeOperation = 'source-over';
+         ctx.strokeStyle = '#3b82f6';
+         ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+         ctx.setLineDash([5, 5]);
+         ctx.lineWidth = 2;
+         ctx.beginPath();
+         if(stroke.points.length > 0) ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+         for(let i=1; i<stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+         ctx.closePath();
+         ctx.fill();
+         ctx.stroke();
+         ctx.setLineDash([]);
+         return;
+      } else if (stroke === activeStrokeRef.current && type === 'stroke') {
+         return; // do not draw anything
+      }
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      finalSize = (stroke.brush?.size || stroke.size || 4) * 3 * (cameraRef.current.z < 1 ? 1/cameraRef.current.z : 1);
+      thinning = 0;
+    } else if (stroke.tool === 'highlighter') {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = stroke.brush?.color || stroke.color || '#FDFD96';
+      finalSize = (stroke.brush?.size || stroke.size || 4) * 4;
+      ctx.globalAlpha = 0.4;
+      thinning = -0.2;
+    } else if (stroke.tool === 'fountain') {
+      finalSize = (stroke.brush?.size || stroke.size || 4) * 2;
+      thinning = 0.7;
+      streamline = 0.8;
+    } else if (stroke.tool === 'gel') {
+      finalSize = (stroke.brush?.size || stroke.size || 4);
+      thinning = 0.1;
+    }
+    
+    const points = stroke.points.map(p => [p.x, p.y, p.pressure]);
+    const outline = getStroke(points, {
+      size: finalSize,
+      thinning,
+      smoothing,
+      streamline,
+      simulatePressure: stroke.tool !== 'eraser' && stroke.tool !== 'highlighter'
+    });
+
+    if (outline.length === 0) return;
+
+    ctx.beginPath();
+    ctx.moveTo(outline[0][0], outline[0][1]);
+    for (let i = 1; i < outline.length; i++) {
+      ctx.lineTo(outline[i][0], outline[i][1]);
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  };
+
   const drawAllStrokes = (ctx: CanvasRenderingContext2D) => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const allStrokes = [...strokesRef.current];
-    if (activeStrokeRef.current) {
-      allStrokes.push(activeStrokeRef.current);
-    }
+    const width = window.innerWidth;
+    const height = window.innerHeight;
     
-    const globalPenSettings = useCanvasStore.getState().penSettings;
+    // Viewport bounds for culling
+    const topLeft = screenToWorld(0, 0);
+    const bottomRight = screenToWorld(width, height);
+    
+    const vMinX = Math.min(topLeft.x, bottomRight.x);
+    const vMaxX = Math.max(topLeft.x, bottomRight.x);
+    const vMinY = Math.min(topLeft.y, bottomRight.y);
+    const vMaxY = Math.max(topLeft.y, bottomRight.y);
 
-    allStrokes.forEach(stroke => {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = stroke.brush?.color || stroke.color || '#000';
-      
-      let finalSize = (stroke.brush?.size || stroke.size || 4) * (globalPenSettings.size / 4);
-      let thinning = globalPenSettings.thinning;
-      let streamline = globalPenSettings.streamline;
-      let smoothing = stroke.brush?.smoothing ?? globalPenSettings.smoothing;
-      
-      if (stroke.tool === 'eraser') {
-        const type = useCanvasStore.getState().eraserType;
-        if (stroke === activeStrokeRef.current && type === 'lasso') {
-           ctx.globalCompositeOperation = 'source-over';
-           ctx.strokeStyle = '#3b82f6';
-           ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
-           ctx.setLineDash([5, 5]);
-           ctx.lineWidth = 2;
-           ctx.beginPath();
-           if(stroke.points.length > 0) ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-           for(let i=1; i<stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-           ctx.closePath();
-           ctx.fill();
-           ctx.stroke();
-           ctx.setLineDash([]);
-           return;
-        } else if (stroke === activeStrokeRef.current && type === 'stroke') {
-           return; // do not draw anything
-        }
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
-        finalSize = (stroke.brush?.size || stroke.size || 4) * 3 * (camera.z < 1 ? 1/camera.z : 1);
-        thinning = 0;
-      } else if (stroke.tool === 'highlighter') {
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = stroke.brush?.color || stroke.color || '#FDFD96';
-        finalSize = (stroke.brush?.size || stroke.size || 4) * 4;
-        ctx.globalAlpha = 0.4;
-        thinning = -0.2;
-      } else if (stroke.tool === 'fountain') {
-        finalSize = (stroke.brush?.size || stroke.size || 4) * 2;
-        thinning = 0.7;
-        streamline = 0.8;
-      } else if (stroke.tool === 'gel') {
-        finalSize = (stroke.brush?.size || stroke.size || 4);
-        thinning = 0.1;
+    strokesRef.current.forEach(stroke => {
+      // Bounding box culling
+      const bbox = stroke.boundingBox;
+      const isOutside = bbox.x > vMaxX || 
+                        bbox.x + bbox.width < vMinX || 
+                        bbox.y > vMaxY || 
+                        bbox.y + bbox.height < vMinY;
+                        
+      if (!isOutside) {
+        drawSingleStroke(ctx, stroke);
       }
-      
-      const points = stroke.points.map(p => [p.x, p.y, p.pressure]);
-      const outline = getStroke(points, {
-        size: finalSize,
-        thinning,
-        smoothing,
-        streamline,
-        simulatePressure: stroke.tool !== 'eraser' && stroke.tool !== 'highlighter'
-      });
-
-      if (outline.length === 0) return;
-
-      ctx.beginPath();
-      ctx.moveTo(outline[0][0], outline[0][1]);
-      for (let i = 1; i < outline.length; i++) {
-        ctx.lineTo(outline[i][0], outline[i][1]);
-      }
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
     });
   };
 
@@ -659,19 +700,21 @@ export const Canvas: React.FC = () => {
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    const committedCanvas = committedCanvasRef.current;
     const bgCanvas = bgCanvasRef.current;
-    if (!canvas || !bgCanvas) return;
+    if (!canvas || !committedCanvas || !bgCanvas) return;
     const ctx = canvas.getContext('2d');
+    const committedCtx = committedCanvas.getContext('2d');
     const bgCtx = bgCanvas.getContext('2d');
-    if (!ctx || !bgCtx) return;
+    if (!ctx || !committedCtx || !bgCtx) return;
 
     const renderBg = () => {
       bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
       
       bgCtx.save();
       bgCtx.translate(bgCanvas.width / 2, bgCanvas.height / 2);
-      bgCtx.scale(camera.z, camera.z);
-      bgCtx.translate(-bgCanvas.width / 2 + camera.x, -bgCanvas.height / 2 + camera.y);
+      bgCtx.scale(cameraRef.current.z, cameraRef.current.z);
+      bgCtx.translate(-bgCanvas.width / 2 + cameraRef.current.x, -bgCanvas.height / 2 + cameraRef.current.y);
 
       const rootStyle = getComputedStyle(document.documentElement);
       const textTertiary = rootStyle.getPropertyValue('--text-tertiary').trim() || '#b2bec3';
@@ -754,14 +797,26 @@ export const Canvas: React.FC = () => {
       bgCtx.restore();
     };
 
-    const renderStrokes = () => {
+    const renderCommitted = () => {
+      committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
+      committedCtx.save();
+      committedCtx.translate(committedCanvas.width / 2, committedCanvas.height / 2);
+      committedCtx.scale(cameraRef.current.z, cameraRef.current.z);
+      committedCtx.translate(-committedCanvas.width / 2 + cameraRef.current.x, -committedCanvas.height / 2 + cameraRef.current.y);
+      drawAllStrokes(committedCtx);
+      committedCtx.restore();
+    };
+
+    const renderActive = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.save();
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.scale(camera.z, camera.z);
-      ctx.translate(-canvas.width / 2 + camera.x, -canvas.height / 2 + camera.y);
-      drawAllStrokes(ctx);
-      ctx.restore();
+      if (activeStrokeRef.current) {
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(cameraRef.current.z, cameraRef.current.z);
+        ctx.translate(-canvas.width / 2 + cameraRef.current.x, -canvas.height / 2 + cameraRef.current.y);
+        drawSingleStroke(ctx, activeStrokeRef.current);
+        ctx.restore();
+      }
     };
 
     let animationFrameId: number;
@@ -770,21 +825,45 @@ export const Canvas: React.FC = () => {
         renderBg();
         needsBgRender.current = false;
       }
-      if (needsRender.current) {
-        renderStrokes();
-        needsRender.current = false;
+      if (needsCommittedRender.current) {
+        renderCommitted();
+        needsCommittedRender.current = false;
+      }
+      if (needsActiveRender.current) {
+        renderActive();
+        needsActiveRender.current = false;
       }
       animationFrameId = requestAnimationFrame(loop);
     };
     loop();
 
     const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      bgCanvas.width = window.innerWidth;
-      bgCanvas.height = window.innerHeight;
-      needsRender.current = true;
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      // Scale backing stores by DPR and match display size with CSS
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      ctx.scale(dpr, dpr);
+
+      committedCanvas.width = w * dpr;
+      committedCanvas.height = h * dpr;
+      committedCanvas.style.width = `${w}px`;
+      committedCanvas.style.height = `${h}px`;
+      committedCtx.scale(dpr, dpr);
+
+      bgCanvas.width = w * dpr;
+      bgCanvas.height = h * dpr;
+      bgCanvas.style.width = `${w}px`;
+      bgCanvas.style.height = `${h}px`;
+      bgCtx.scale(dpr, dpr);
+
       needsBgRender.current = true;
+      needsCommittedRender.current = true;
+      needsActiveRender.current = true;
     };
     window.addEventListener('resize', resize);
     resize();
@@ -793,7 +872,7 @@ export const Canvas: React.FC = () => {
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [camera]);
+  }, []);
 
   // Removed unused presetColors
   const domOverlayTransform = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px) scale(${camera.z}) translate(${-window.innerWidth / 2 + camera.x}px, ${-window.innerHeight / 2 + camera.y}px)`;
@@ -805,15 +884,19 @@ export const Canvas: React.FC = () => {
         style={{ pointerEvents: 'none', position: 'absolute', zIndex: 0 }}
       />
       <canvas
+        ref={committedCanvasRef}
+        style={{ pointerEvents: 'none', position: 'absolute', zIndex: 1 }}
+      />
+      <canvas
         ref={canvasRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        style={{ cursor: tool === 'pan' ? 'grab' : (tool === 'select' ? 'default' : (tool === 'text' ? 'text' : 'crosshair')), touchAction: 'none', position: 'absolute', zIndex: 1 }}
+        style={{ cursor: tool === 'pan' ? 'grab' : (tool === 'select' ? 'default' : (tool === 'text' ? 'text' : 'crosshair')), touchAction: 'none', position: 'absolute', zIndex: 2 }}
       />
 
-      <div className="canvas-dom-overlay" style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', overflow: 'hidden', zIndex: 2 }}>
+      <div className="canvas-dom-overlay" style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', overflow: 'hidden', zIndex: 3 }}>
         <RulerTool />
         <div style={{ transformOrigin: '0 0', transform: domOverlayTransform, width: '100%', height: '100%', position: 'absolute' }}>
           {elements.map(el => {
