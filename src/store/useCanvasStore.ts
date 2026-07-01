@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
+import { indexedDBStorage } from './indexedDBStorage';
 
 export interface StrokePoint {
   x: number;
@@ -230,7 +231,10 @@ export const useCanvasStore = create<CanvasState>()(
           return { notebookElements: { ...state.notebookElements, [notebookId]: newElements } };
         }),
       }),
-      { name: 'kawaiinote-canvas-storage' }
+      { 
+        name: 'kawaiinote-canvas-storage',
+        storage: createJSONStorage(() => indexedDBStorage)
+      }
     ),
     { limit: 50, partialize: (state) => ({ notebookElements: state.notebookElements, notebookStrokes: state.notebookStrokes }) }
   )
