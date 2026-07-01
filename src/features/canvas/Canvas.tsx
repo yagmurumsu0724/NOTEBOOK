@@ -17,6 +17,7 @@ import { HANDWRITING_FONTS, loadFont } from './fonts';
 import { getStroke } from 'perfect-freehand';
 import { AIHandwritingEngine } from './utils/aiHandwritingEngine';
 import { AIInsightPanel } from '../ai/components/AIInsightPanel';
+import { StrokeSmoother } from './engine/StrokeSmoother';
 import './Canvas.css';
 
 const EMPTY_ELEMENTS: CanvasElement[] = [];
@@ -84,6 +85,7 @@ export const Canvas: React.FC = () => {
   const isDrawing = useRef(false);
   const needsRender = useRef(true); 
   const needsBgRender = useRef(true);
+  const smootherRef = useRef(new StrokeSmoother());
   const lastMousePos = useRef({ x: 0, y: 0 });
   const strokesRef = useRef<Stroke[]>([]);
   const activeStrokeRef = useRef<Stroke | null>(null);
@@ -520,6 +522,7 @@ export const Canvas: React.FC = () => {
       if (type === 'stroke') {
         isDrawing.current = true;
         const timestamp = Date.now();
+        smootherRef.current.reset();
         activeStrokeRef.current = {
           id: `stroke_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
           tool,
@@ -541,6 +544,7 @@ export const Canvas: React.FC = () => {
     
     isDrawing.current = true;
     const wPos = screenToWorld(e.clientX, e.clientY);
+    smootherRef.current.reset();
     
     let actualColor = currentColor;
     if (currentColor.startsWith('var(')) {
@@ -591,14 +595,28 @@ export const Canvas: React.FC = () => {
     } else if (isDrawing.current && activeStrokeRef.current) {
       const wPos = screenToWorld(e.clientX, e.clientY);
       const timestamp = Date.now();
-      activeStrokeRef.current.points.push({ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5, timestamp });
+      
+      // Filter points for tremor reduction (Kalman filter)
+      const filtered = smootherRef.current.filter(wPos.x, wPos.y);
+      activeStrokeRef.current.points.push({ 
+        x: filtered.x, 
+        y: filtered.y, 
+        pressure: e.pressure || 0.5, 
+        timestamp 
+      });
+
+      // Calculate dynamic pressure/velocity for fountain stylus effect
+      const pts = activeStrokeRef.current.points;
+      const idx = pts.length - 1;
+      const { pressure } = StrokeSmoother.calculatePressureAndVelocity(pts, idx);
+      pts[idx].pressure = pressure;
       
       // Update boundingBox incrementally
       const bbox = activeStrokeRef.current.boundingBox;
-      const minX = bbox.width === 0 && bbox.height === 0 ? wPos.x : Math.min(bbox.x, wPos.x);
-      const minY = bbox.width === 0 && bbox.height === 0 ? wPos.y : Math.min(bbox.y, wPos.y);
-      const maxX = bbox.width === 0 && bbox.height === 0 ? wPos.x : Math.max(bbox.x + bbox.width, wPos.x);
-      const maxY = bbox.width === 0 && bbox.height === 0 ? wPos.y : Math.max(bbox.y + bbox.height, wPos.y);
+      const minX = bbox.width === 0 && bbox.height === 0 ? filtered.x : Math.min(bbox.x, filtered.x);
+      const minY = bbox.width === 0 && bbox.height === 0 ? filtered.y : Math.min(bbox.y, filtered.y);
+      const maxX = bbox.width === 0 && bbox.height === 0 ? filtered.x : Math.max(bbox.x + bbox.width, filtered.x);
+      const maxY = bbox.width === 0 && bbox.height === 0 ? filtered.y : Math.max(bbox.y + bbox.height, filtered.y);
       activeStrokeRef.current.boundingBox = {
         x: minX,
         y: minY,
@@ -664,6 +682,11 @@ export const Canvas: React.FC = () => {
              if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
              return; 
           }
+        }
+
+        // Optimize points with Douglas-Peucker before saving (reduces size & speeds up render)
+        if (activeStrokeRef.current.points.length > 2) {
+          activeStrokeRef.current.points = StrokeSmoother.optimizePoints(activeStrokeRef.current.points, 0.35);
         }
 
         strokesRef.current.push(activeStrokeRef.current);
