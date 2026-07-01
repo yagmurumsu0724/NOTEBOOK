@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Folder as FolderIcon, Star, Home } from 'lucide-react';
+import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { FolderCard } from './components/FolderCard';
@@ -8,6 +8,7 @@ import { NotebookCard } from './components/NotebookCard';
 import { Breadcrumb } from './components/Breadcrumb';
 import { CreateNotebookModal } from './components/CreateNotebookModal';
 import { GlassCard } from '../../components/ui/GlassCard';
+import { SemanticSearchEngine, type SearchResult } from '../ai/SemanticSearch';
 import './Dashboard.css';
 
 type ViewMode = 'all' | 'pinned' | 'folder' | 'tag';
@@ -18,6 +19,9 @@ export const Dashboard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('folder');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [semanticResults, setSemanticResults] = useState<SearchResult[]>([]);
+  const [isSemanticSearching, setIsSemanticSearching] = useState(false);
+  const [semanticEnabled, setSemanticEnabled] = useState(false);
 
   React.useEffect(() => {
     document.title = 'KawaiiNote | Ana Sayfa';
@@ -39,6 +43,13 @@ export const Dashboard: React.FC = () => {
       n.title.toLowerCase().includes(searchLower) ||
       (n.tags || []).some(t => t.toLowerCase().includes(searchLower))
     );
+    
+    // Also add semantic search results
+    if (semanticResults.length > 0) {
+      const semanticIds = semanticResults.map(r => r.notebookId);
+      const semanticNotebooks = notebooks.filter(n => semanticIds.includes(n.id) && !displayNotebooks.some(dn => dn.id === n.id));
+      displayNotebooks = [...displayNotebooks, ...semanticNotebooks];
+    }
   } else {
     if (viewMode === 'all') {
       displayFolders = folders;
@@ -169,11 +180,59 @@ export const Dashboard: React.FC = () => {
               type="text" 
               placeholder="Defter, klasör veya etiket ara..." 
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                // Trigger semantic search after debounce
+                if (e.target.value.trim().length > 2 && semanticEnabled) {
+                  setIsSemanticSearching(true);
+                  SemanticSearchEngine.search(e.target.value.trim()).then(results => {
+                    setSemanticResults(results);
+                    setIsSemanticSearching(false);
+                  }).catch(() => setIsSemanticSearching(false));
+                } else {
+                  setSemanticResults([]);
+                }
+              }}
               className="dashboard-search-input"
             />
+            <button
+              onClick={async () => {
+                if (!semanticEnabled) {
+                  setSemanticEnabled(true);
+                  try {
+                    await SemanticSearchEngine.loadModel();
+                  } catch { /* ignore */ }
+                } else {
+                  setSemanticEnabled(false);
+                  setSemanticResults([]);
+                }
+              }}
+              title={semanticEnabled ? 'Akıllı Arama Aktif' : 'Akıllı Aramayı Aç (AI)'}
+              style={{
+                position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)',
+                background: semanticEnabled ? 'linear-gradient(135deg, #8b5cf6, #a855f7)' : 'rgba(0,0,0,0.05)',
+                border: 'none', borderRadius: '8px', padding: '0.4rem 0.6rem', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '0.3rem',
+                color: semanticEnabled ? '#fff' : 'var(--text-tertiary)', fontSize: '0.75rem', fontWeight: 600
+              }}
+            >
+              {isSemanticSearching ? <Loader2 size={14} className="spin" /> : <Brain size={14} />}
+              {semanticEnabled ? 'AI' : ''}
+            </button>
           </div>
         </div>
+
+        {/* Semantic Search Info Banner */}
+        {isSearching && semanticResults.length > 0 && (
+          <div style={{
+            background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)',
+            borderRadius: '12px', padding: '0.8rem 1rem', marginBottom: '1.5rem',
+            display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#8b5cf6'
+          }}>
+            <Brain size={16} />
+            <span>🧠 AI anlam bazlı arama ile <strong>{semanticResults.length}</strong> ek sonuç bulundu</span>
+          </div>
+        )}
 
         {viewMode === 'folder' && !isSearching && <Breadcrumb />}
 
