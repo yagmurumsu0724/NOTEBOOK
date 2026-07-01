@@ -24,6 +24,9 @@ export interface Notebook {
   updatedAt: string;
   tags?: string[];
   isPinned?: boolean;
+  isDailyNote?: boolean;
+  dailyDate?: string;
+  actionItems?: { id: string; text: string; completed: boolean }[];
 }
 
 export interface Folder {
@@ -51,6 +54,10 @@ interface AppState {
   addFolder: (folder: Omit<Folder, 'id'>) => void;
   updateFolder: (id: string, updates: Partial<Folder>) => void;
   deleteFolder: (id: string) => void;
+  
+  createDailyNote: () => string;
+  toggleTask: (notebookId: string, taskId: string) => void;
+  deleteTask: (notebookId: string, taskId: string) => void;
 }
 
 const MOCK_FOLDERS: Folder[] = [
@@ -101,6 +108,74 @@ export const useStore = create<AppState>()(
       })),
       deleteFolder: (id) => set((state) => ({
         folders: state.folders.filter(f => f.id !== id)
+      })),
+      
+      createDailyNote: () => {
+        let dailyNoteId = '';
+        set((state) => {
+          const today = new Date();
+          const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+          
+          // Check if a daily note already exists for today
+          const existing = state.notebooks.find(n => n.isDailyNote && n.dailyDate === dateStr);
+          if (existing) {
+            dailyNoteId = existing.id;
+            return {};
+          }
+          
+          const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+          const friendlyDate = today.toLocaleDateString('tr-TR', options); // e.g., "1 Temmuz 2026"
+          
+          const newId = Date.now().toString();
+          const newNotebook: Notebook = {
+            id: newId,
+            title: `Günlük: ${friendlyDate}`,
+            folderId: null,
+            coverType: 'color',
+            coverColor: 'var(--color-sakura)',
+            pageStyle: 'dots',
+            pageSettings: {
+              pattern: 'journal',
+              opacity: 0.4,
+              thickness: 1,
+              density: 1,
+              color: 'var(--text-tertiary)'
+            },
+            fontFamily: 'var(--font-family-base)',
+            icon: '📅',
+            updatedAt: dateStr,
+            isDailyNote: true,
+            dailyDate: dateStr,
+            tags: ['günlük'],
+            actionItems: []
+          };
+          
+          dailyNoteId = newId;
+          return { notebooks: [...state.notebooks, newNotebook] };
+        });
+        return dailyNoteId;
+      },
+      
+      toggleTask: (notebookId, taskId) => set((state) => ({
+        notebooks: state.notebooks.map(n => {
+          if (n.id !== notebookId) return n;
+          return {
+            ...n,
+            actionItems: (n.actionItems || []).map(t => 
+              t.id === taskId ? { ...t, completed: !t.completed } : t
+            )
+          };
+        })
+      })),
+      
+      deleteTask: (notebookId, taskId) => set((state) => ({
+        notebooks: state.notebooks.map(n => {
+          if (n.id !== notebookId) return n;
+          return {
+            ...n,
+            actionItems: (n.actionItems || []).filter(t => t.id !== taskId)
+          };
+        })
       })),
     }),
     {

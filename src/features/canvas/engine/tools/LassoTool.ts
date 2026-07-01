@@ -66,7 +66,7 @@ export class LassoTool implements Tool {
     ctx.needsRender.current = true;
   }
 
-  onPointerUp(e: React.PointerEvent, worldPos: { x: number; y: number }, ctx: ToolContext): void {
+  onPointerUp(_e: React.PointerEvent, _worldPos: { x: number; y: number }, ctx: ToolContext): void {
     if (!ctx.activeStrokeRef.current) return;
 
     const polygon = ctx.activeStrokeRef.current.points;

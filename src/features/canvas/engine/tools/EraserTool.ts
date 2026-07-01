@@ -74,7 +74,7 @@ export class EraserTool implements Tool {
     }
   }
 
-  onPointerUp(e: React.PointerEvent, worldPos: { x: number; y: number }, ctx: ToolContext): void {
+  onPointerUp(_e: React.PointerEvent, _worldPos: { x: number; y: number }, ctx: ToolContext): void {
     const type = useCanvasStore.getState().eraserType;
     if (type === 'stroke') {
       ctx.activeStrokeRef.current = null;

@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Sparkles, Key, Brain, ListChecks, Tags, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { AIInsightEngine, type AIInsight, type AIProvider } from '../AIInsightEngine';
+import { useStore } from '../../../store/useStore';
 
 interface AIInsightPanelProps {
   isOpen: boolean;
   onClose: () => void;
   noteContent: string; // Combined text content from the notebook
   onApplyTags?: (tags: string[]) => void;
+  notebookId?: string;
 }
 
-export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ isOpen, onClose, noteContent, onApplyTags }) => {
+export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ isOpen, onClose, noteContent, onApplyTags, notebookId }) => {
   const [activeTab, setActiveTab] = useState<'insight' | 'settings'>('insight');
   const [insight, setInsight] = useState<AIInsight | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,6 +32,16 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ isOpen, onClose,
     try {
       const result = await AIInsightEngine.analyze(noteContent);
       setInsight(result);
+      
+      // Auto save action items to store
+      if (notebookId && result.actionItems && result.actionItems.length > 0) {
+        const tasks = result.actionItems.map((item, idx) => ({
+          id: `task_${Date.now()}_${idx}`,
+          text: item,
+          completed: false
+        }));
+        useStore.getState().updateNotebook(notebookId, { actionItems: tasks });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

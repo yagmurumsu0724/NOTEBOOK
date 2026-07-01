@@ -9,6 +9,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024, // 30MB to allow large transformers WASM files to be cached
+      },
       manifest: {
         name: 'KawaiiNote',
         short_name: 'KawaiiNote',

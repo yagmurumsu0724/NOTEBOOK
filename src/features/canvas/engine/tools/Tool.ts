@@ -5,7 +5,7 @@ export interface ToolContext {
   notebookId: string;
   currentColor: string;
   currentSize: number;
-  canvasRef: React.RefObject<HTMLCanvasElement>;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
   activeStrokeRef: React.MutableRefObject<Stroke | null>;
   strokesRef: React.MutableRefObject<Stroke[]>;
   needsRender: React.MutableRefObject<boolean>;

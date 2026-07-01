@@ -90,7 +90,7 @@ export class AIHandwritingEngine {
       strokes.forEach(stroke => {
         const localPoints = stroke.points.map(p => [p.x - minX, p.y - minY, p.pressure || 0.5]);
         const outline = getStroke(localPoints, {
-          size: stroke.brush?.size || stroke.size || 4,
+          size: stroke.brush?.size || (stroke as any).size || 4,
           thinning: 0.5,
           smoothing: 0.5,
           streamline: 0.5,

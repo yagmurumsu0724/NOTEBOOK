@@ -25,26 +25,6 @@ import './Canvas.css';
 
 const EMPTY_ELEMENTS: CanvasElement[] = [];
 
-const distToSegmentSquared = (p: {x: number, y: number}, v: {x: number, y: number}, w: {x: number, y: number}) => {
-  const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
-  if (l2 === 0) return (p.x - v.x) ** 2 + (p.y - v.y) ** 2;
-  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-  t = Math.max(0, Math.min(1, t));
-  return (p.x - (v.x + t * (w.x - v.x))) ** 2 + (p.y - (v.y + t * (w.y - v.y))) ** 2;
-};
-
-const pointInPolygon = (point: {x: number, y: number}, vs: {x: number, y: number}[]) => {
-  let x = point.x, y = point.y;
-  let inside = false;
-  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-    let xi = vs[i].x, yi = vs[i].y;
-    let xj = vs[j].x, yj = vs[j].y;
-    let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-};
-
 const toolsMap = {
   pen: new PenTool(),
   eraser: new EraserTool(),
@@ -87,7 +67,6 @@ export const Canvas: React.FC = () => {
   const addElement = useCanvasStore(state => state.addElement);
   const updateElement = useCanvasStore(state => state.updateElement);
   const notebook = useStore(state => state.notebooks.find(n => n.id === notebookId));
-  const updateNotebook = useStore(state => state.updateNotebook);
 
   const isPanning = useRef(false);
   const isDrawing = useRef(false);
@@ -108,6 +87,7 @@ export const Canvas: React.FC = () => {
   const lastMousePos = useRef({ x: 0, y: 0 });
   const strokesRef = useRef<Stroke[]>([]);
   const activeStrokeRef = useRef<Stroke | null>(null);
+  const smootherRef = useRef(new StrokeSmoother());
   
   const dragInfo = useRef<{ id: string, startWorldX: number, startWorldY: number, startElX: number, startElY: number } | null>(null);
 
@@ -309,9 +289,9 @@ export const Canvas: React.FC = () => {
     const globalPenSettings = useCanvasStore.getState().penSettings;
     
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = stroke.brush?.color || stroke.color || '#000';
+    ctx.fillStyle = stroke.brush?.color || (stroke as any).color || '#000';
     
-    let finalSize = (stroke.brush?.size || stroke.size || 4) * (globalPenSettings.size / 4);
+    let finalSize = (stroke.brush?.size || (stroke as any).size || 4) * (globalPenSettings.size / 4);
     let thinning = globalPenSettings.thinning;
     let streamline = globalPenSettings.streamline;
     let smoothing = stroke.brush?.smoothing ?? globalPenSettings.smoothing;
@@ -337,20 +317,20 @@ export const Canvas: React.FC = () => {
       }
       ctx.globalCompositeOperation = 'destination-out';
       ctx.fillStyle = 'rgba(0,0,0,1)';
-      finalSize = (stroke.brush?.size || stroke.size || 4) * 3 * (cameraRef.current.z < 1 ? 1/cameraRef.current.z : 1);
+      finalSize = (stroke.brush?.size || (stroke as any).size || 4) * 3 * (cameraRef.current.z < 1 ? 1/cameraRef.current.z : 1);
       thinning = 0;
     } else if (stroke.tool === 'highlighter') {
       ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = stroke.brush?.color || stroke.color || '#FDFD96';
-      finalSize = (stroke.brush?.size || stroke.size || 4) * 4;
+      ctx.fillStyle = stroke.brush?.color || (stroke as any).color || '#FDFD96';
+      finalSize = (stroke.brush?.size || (stroke as any).size || 4) * 4;
       ctx.globalAlpha = 0.4;
       thinning = -0.2;
     } else if (stroke.tool === 'fountain') {
-      finalSize = (stroke.brush?.size || stroke.size || 4) * 2;
+      finalSize = (stroke.brush?.size || (stroke as any).size || 4) * 2;
       thinning = 0.7;
       streamline = 0.8;
     } else if (stroke.tool === 'gel') {
-      finalSize = (stroke.brush?.size || stroke.size || 4);
+      finalSize = (stroke.brush?.size || (stroke as any).size || 4);
       thinning = 0.1;
     }
     
@@ -1067,6 +1047,7 @@ export const Canvas: React.FC = () => {
       <AIInsightPanel
         isOpen={isAIInsightOpen}
         onClose={() => setIsAIInsightOpen(false)}
+        notebookId={notebookId}
         noteContent={
           elements
             .filter(el => el.type === 'text' && el.content)

@@ -69,7 +69,7 @@ export class PenTool implements Tool {
     ctx.needsRender.current = true;
   }
 
-  onPointerUp(e: React.PointerEvent, worldPos: { x: number; y: number }, ctx: ToolContext): void {
+  onPointerUp(_e: React.PointerEvent, _worldPos: { x: number; y: number }, ctx: ToolContext): void {
     // Handled at main Canvas level for storing & committing to allow easy OCR sync.
     // However, Tool can run point decimation and finalization.
     if (!ctx.activeStrokeRef.current) return;

@@ -5,7 +5,7 @@ import {
   Hand, ChevronRight, ChevronLeft, Image as ImageIcon, Sparkles, Shapes, Sticker, Layout,
   Ruler, Settings2, Plus, Minus, Lasso, Scissors, Circle
 } from 'lucide-react';
-import type { ToolType, EraserType } from '../../../store/useCanvasStore';
+import type { ToolType } from '../../../store/useCanvasStore';
 import { useCanvasStore } from '../../../store/useCanvasStore';
 import { useStore } from '../../../store/useStore';
 import { IconButton } from '../../../components/ui/IconButton';
@@ -38,7 +38,7 @@ const tools = [
 ] as const;
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
-  tool, setTool, currentColor, currentSize, setCurrentSize, onOpenColorStudio, onOpenAI, onAddImage, onOpenShapes, onOpenStickers, onOpenBackgrounds, isAIMode, setIsAIMode, onOpenPenSettings, notebookId
+  tool, setTool, currentColor, currentSize: _currentSize, setCurrentSize: _setCurrentSize, onOpenColorStudio, onOpenAI, onAddImage, onOpenShapes, onOpenStickers, onOpenBackgrounds, isAIMode, setIsAIMode, onOpenPenSettings, notebookId
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const dragControls = useDragControls();

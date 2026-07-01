@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2 } from 'lucide-react';
+import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2, Calendar, ListTodo } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { FolderCard } from './components/FolderCard';
@@ -9,13 +9,14 @@ import { Breadcrumb } from './components/Breadcrumb';
 import { CreateNotebookModal } from './components/CreateNotebookModal';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { SemanticSearchEngine, type SearchResult } from '../ai/SemanticSearch';
+import { TasksDashboard } from './components/TasksDashboard';
 import './Dashboard.css';
 
-type ViewMode = 'all' | 'pinned' | 'folder' | 'tag';
+type ViewMode = 'all' | 'pinned' | 'folder' | 'tag' | 'daily' | 'tasks';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { folders, notebooks, currentFolderId, searchQuery, setSearchQuery, setCurrentFolder, addFolder } = useStore();
+  const { folders, notebooks, currentFolderId, searchQuery, setSearchQuery, setCurrentFolder, addFolder, createDailyNote } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('folder');
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -60,12 +61,18 @@ export const Dashboard: React.FC = () => {
     } else if (viewMode === 'tag' && activeTag) {
       displayFolders = [];
       displayNotebooks = notebooks.filter(n => n.tags?.includes(activeTag));
+    } else if (viewMode === 'daily') {
+      displayFolders = [];
+      displayNotebooks = notebooks.filter(n => n.isDailyNote);
     } else {
       // folder view (default)
       displayFolders = folders.filter(f => f.parentId === currentFolderId);
       displayNotebooks = notebooks.filter(n => n.folderId === currentFolderId);
     }
   }
+
+  // Count active pending tasks
+  const pendingTasksCount = notebooks.flatMap(n => n.actionItems || []).filter(t => !t.completed).length;
 
   const getFolderPath = (id: string | null): string => {
     if (!id) return 'Ana Dizin';
@@ -132,6 +139,44 @@ export const Dashboard: React.FC = () => {
             isActive={viewMode === 'pinned' && !isSearching} 
             onClick={() => { setViewMode('pinned'); setSearchQuery(''); }} 
           />
+          <NavItem 
+            icon={Calendar} label="Günlükler (Journal)" badge={notebooks.filter(n => n.isDailyNote).length}
+            isActive={viewMode === 'daily' && !isSearching} 
+            onClick={() => { setViewMode('daily'); setSearchQuery(''); }} 
+          />
+          <NavItem 
+            icon={ListTodo} label="Görevler (Tasks)" badge={pendingTasksCount}
+            isActive={viewMode === 'tasks' && !isSearching} 
+            onClick={() => { setViewMode('tasks'); setSearchQuery(''); }} 
+          />
+          
+          {/* Quick daily note button */}
+          <button
+            onClick={() => {
+              const dailyId = createDailyNote();
+              navigate(`/canvas/${dailyId}`);
+            }}
+            className="sidebar-quick-btn"
+            style={{
+              marginTop: '1rem',
+              width: '100%',
+              padding: '0.75rem',
+              borderRadius: '12px',
+              border: 'none',
+              background: 'linear-gradient(135deg, var(--color-primary), #a855f7)',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              boxShadow: 'var(--shadow-glow)'
+            }}
+          >
+            <Plus size={16} /> Günlük Not Ekle
+          </button>
         </div>
 
         {/* Tags Section */}
@@ -234,7 +279,11 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {viewMode === 'folder' && !isSearching && <Breadcrumb />}
+        {viewMode === 'tasks' && !isSearching ? (
+          <TasksDashboard />
+        ) : (
+          <>
+            {viewMode === 'folder' && !isSearching && <Breadcrumb />}
 
         {/* Pinned Section (shown in 'all' mode) */}
         {viewMode === 'all' && !isSearching && notebooks.filter(n => n.isPinned).length > 0 && (
@@ -335,7 +384,8 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
-
+        </>
+        )}
       </main>
       
       {isModalOpen && <CreateNotebookModal onClose={() => setIsModalOpen(false)} folderId={viewMode === 'folder' ? currentFolderId : null} />}
