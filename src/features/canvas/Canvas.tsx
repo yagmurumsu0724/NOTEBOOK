@@ -11,6 +11,8 @@ import { FontPickerModal } from './components/FontPickerModal';
 import { ShapesModal } from './components/ShapesModal';
 import { StickersModal } from './components/StickersModal';
 import { BackgroundsModal } from './components/BackgroundsModal';
+import { PenSettingsModal } from './components/PenSettingsModal';
+import { RulerTool } from './components/RulerTool';
 import { HANDWRITING_FONTS, loadFont } from './fonts';
 import { getStroke } from 'perfect-freehand';
 import { AIHandwritingEngine } from './utils/aiHandwritingEngine';
@@ -38,6 +40,7 @@ export const Canvas: React.FC = () => {
   const [isShapesOpen, setIsShapesOpen] = useState(false);
   const [isStickersOpen, setIsStickersOpen] = useState(false);
   const [isBackgroundsOpen, setIsBackgroundsOpen] = useState(false);
+  const [isPenSettingsOpen, setIsPenSettingsOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, id: string} | null>(null);
   
   const aiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -242,15 +245,17 @@ export const Canvas: React.FC = () => {
     if (activeStrokeRef.current) {
       allStrokes.push(activeStrokeRef.current);
     }
+    
+    const globalPenSettings = useCanvasStore.getState().penSettings;
 
     allStrokes.forEach(stroke => {
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = stroke.color;
       
-      let finalSize = stroke.size;
-      let thinning = 0.5;
-      let streamline = 0.5;
-      let smoothing = 0.5;
+      let finalSize = stroke.size * (globalPenSettings.size / 4);
+      let thinning = globalPenSettings.thinning;
+      let streamline = globalPenSettings.streamline;
+      let smoothing = globalPenSettings.smoothing;
       
       if (stroke.tool === 'eraser') {
         ctx.globalCompositeOperation = 'destination-out';
@@ -523,14 +528,14 @@ export const Canvas: React.FC = () => {
             AIHandwritingEngine.detector.addStroke(activeStrokeRef.current);
             if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
             
-            aiTimeoutRef.current = setTimeout(() => {
+            aiTimeoutRef.current = setTimeout(async () => {
               if (AIHandwritingEngine.detector.shouldProcess()) {
                 const strokes = AIHandwritingEngine.detector.getAndClearStrokes();
                 const actualColor = currentColor.startsWith('var(') 
                   ? getComputedStyle(document.documentElement).getPropertyValue(currentColor.slice(4, -1)).trim() 
                   : currentColor;
                 
-                const newTextElement = AIHandwritingEngine.simulateOCR(strokes, currentFont, actualColor || '#000');
+                const newTextElement = await AIHandwritingEngine.performOCR(strokes, currentFont, actualColor || '#000');
                 
                 // Add the new text element
                 useCanvasStore.getState().addElement(notebookId, newTextElement);
@@ -540,7 +545,7 @@ export const Canvas: React.FC = () => {
                 
                 needsRender.current = true;
               }
-            }, 600);
+            }, 1000);
           }
         }
         activeStrokeRef.current = null;
@@ -690,6 +695,7 @@ export const Canvas: React.FC = () => {
       />
 
       <div className="canvas-dom-overlay" style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', overflow: 'hidden', zIndex: 2 }}>
+        <RulerTool />
         <div style={{ transformOrigin: '0 0', transform: domOverlayTransform, width: '100%', height: '100%', position: 'absolute' }}>
           {elements.map(el => {
             const isSelected = selectedElementId === el.id;
@@ -808,6 +814,8 @@ export const Canvas: React.FC = () => {
         onOpenBackgrounds={() => setIsBackgroundsOpen(true)}
         isAIMode={isAIMode}
         setIsAIMode={setIsAIMode}
+        onOpenPenSettings={() => setIsPenSettingsOpen(true)}
+        notebookId={notebookId!}
       />
 
       <ColorPickerModal 
@@ -843,17 +851,10 @@ export const Canvas: React.FC = () => {
         notebookId={notebookId!}
       />
 
-      <div 
-        className="fixed bottom-6 right-6 z-40 bg-white rounded-full shadow-lg p-3 cursor-pointer hover:bg-gray-50 hover:scale-105 transition-all border border-gray-200"
-        onClick={() => {
-          if (notebookId) {
-            updateNotebook(notebookId, { pageCount: (notebook?.pageCount || 1) + 1 });
-          }
-        }}
-        title="Yeni Sayfa Ekle"
-      >
-        <span className="text-xl font-bold text-gray-700 select-none px-2">+ Sayfa Ekle</span>
-      </div>
+      <PenSettingsModal
+        isOpen={isPenSettingsOpen}
+        onClose={() => setIsPenSettingsOpen(false)}
+      />
 
       {/* Context Menu */}
       {contextMenu && (

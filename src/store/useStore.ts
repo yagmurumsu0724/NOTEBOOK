@@ -58,10 +58,10 @@ const MOCK_FOLDERS: Folder[] = [
 ];
 
 const MOCK_NOTEBOOKS: Notebook[] = [
-  { id: 'n1', title: 'Fizik Notları', folderId: 'f1', coverType: 'color', coverColor: 'var(--color-lavender)', pageStyle: 'grid', fontFamily: 'var(--font-family-base)', icon: '⚛️', updatedAt: '2026-06-29' },
-  { id: 'n2', title: 'Günlük', folderId: 'f2', coverType: 'color', coverColor: 'var(--color-mint)', pageStyle: 'lined', fontFamily: 'var(--font-family-base)', icon: '📖', updatedAt: '2026-06-28' },
-  { id: 'n3', title: 'Kalkülüs', folderId: 'f3', coverType: 'color', coverColor: 'var(--color-sky-dark)', pageStyle: 'blank', fontFamily: 'var(--font-family-base)', icon: '📐', updatedAt: '2026-06-27' },
-  { id: 'n4', title: 'Hızlı Taslaklar', folderId: null, coverType: 'color', coverColor: 'var(--color-peach)', pageStyle: 'dots', fontFamily: 'var(--font-family-base)', icon: '✏️', updatedAt: '2026-06-29' },
+  { id: 'n1', title: 'Fizik Notları', folderId: 'f1', coverType: 'color', coverColor: 'var(--color-lavender)', pageStyle: 'grid', fontFamily: 'var(--font-family-base)', icon: '⚛️', updatedAt: '2026-06-29', pageCount: 30 },
+  { id: 'n2', title: 'Günlük', folderId: 'f2', coverType: 'color', coverColor: 'var(--color-mint)', pageStyle: 'lined', fontFamily: 'var(--font-family-base)', icon: '📖', updatedAt: '2026-06-28', pageCount: 30 },
+  { id: 'n3', title: 'Kalkülüs', folderId: 'f3', coverType: 'color', coverColor: 'var(--color-sky-dark)', pageStyle: 'blank', fontFamily: 'var(--font-family-base)', icon: '📐', updatedAt: '2026-06-27', pageCount: 30 },
+  { id: 'n4', title: 'Hızlı Taslaklar', folderId: null, coverType: 'color', coverColor: 'var(--color-peach)', pageStyle: 'dots', fontFamily: 'var(--font-family-base)', icon: '✏️', updatedAt: '2026-06-29', pageCount: 30 },
 ];
 
 export const useStore = create<AppState>()(
@@ -82,7 +82,7 @@ export const useStore = create<AppState>()(
       setSearchQuery: (query) => set({ searchQuery: query }),
       
       addNotebook: (notebook) => set((state) => ({
-        notebooks: [...state.notebooks, { ...notebook, id: Date.now().toString(), updatedAt: new Date().toISOString().split('T')[0] }]
+        notebooks: [...state.notebooks, { ...notebook, id: Date.now().toString(), updatedAt: new Date().toISOString().split('T')[0], pageCount: notebook.pageCount ?? 30 }]
       })),
       updateNotebook: (id, updates) => set((state) => ({
         notebooks: state.notebooks.map(n => n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString().split('T')[0] } : n)

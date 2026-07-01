@@ -8,6 +8,19 @@ export interface Stroke { points: StrokePoint[]; color: string; size: number; to
 
 export type ElementType = 'text' | 'image';
 
+export interface PenSettings {
+  size: number;
+  thinning: number;
+  smoothing: number;
+  streamline: number;
+}
+
+export interface RulerState {
+  x: number;
+  y: number;
+  rotation: number;
+  active: boolean;
+}
 export interface CanvasElement {
   id: string;
   type: ElementType;
@@ -38,6 +51,10 @@ interface CanvasState {
   sendToBack: (notebookId: string, elementId: string) => void;
   bringForward: (notebookId: string, elementId: string) => void;
   sendBackward: (notebookId: string, elementId: string) => void;
+  penSettings: PenSettings;
+  setPenSettings: (updates: Partial<PenSettings>) => void;
+  ruler: RulerState;
+  setRuler: (updates: Partial<RulerState>) => void;
 }
 
 export const useCanvasStore = create<CanvasState>()(
@@ -46,6 +63,10 @@ export const useCanvasStore = create<CanvasState>()(
       (set) => ({
         notebookStrokes: {},
         notebookElements: {},
+        penSettings: { size: 4, thinning: 0.5, smoothing: 0.5, streamline: 0.5 },
+        setPenSettings: (updates) => set((state) => ({ penSettings: { ...state.penSettings, ...updates } })),
+        ruler: { x: 400, y: 400, rotation: 0, active: false },
+        setRuler: (updates) => set((state) => ({ ruler: { ...state.ruler, ...updates } })),
         addStroke: (notebookId, stroke) => set((state) => {
           const existing = state.notebookStrokes[notebookId] || [];
           return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: [...existing, stroke] } };

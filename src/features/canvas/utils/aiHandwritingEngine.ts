@@ -1,6 +1,7 @@
 import type { Point } from './PenEngine';
-// removed HandwritingFont
 import type { CanvasElement, Stroke } from '../../../store/useCanvasStore';
+import { getStroke } from 'perfect-freehand';
+import Tesseract from 'tesseract.js';
 
 export interface BeautifiedStroke {
   points: Point[];
@@ -11,7 +12,7 @@ export interface BeautifiedStroke {
 export class LiveWordDetector {
   private currentWordStrokes: Stroke[] = [];
   private lastStrokeTime: number = 0;
-  private detectionTimeout: number = 600; // ms to wait before classifying as a word
+  private detectionTimeout: number = 1000; // 1 second to wait for user to finish a word/sentence
 
   addStroke(stroke: Stroke) {
     this.currentWordStrokes.push(stroke);
@@ -47,9 +48,9 @@ export class AIHandwritingEngine {
   }
 
   /**
-   * Simulates handwriting OCR by converting a group of strokes into a text element
+   * Performs real OCR using Tesseract.js
    */
-  static simulateOCR(strokes: Stroke[], fontId: string, color: string): CanvasElement {
+  static async performOCR(strokes: Stroke[], fontId: string, color: string): Promise<CanvasElement> {
     // 1. Calculate bounding box of all strokes
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     
@@ -62,31 +63,79 @@ export class AIHandwritingEngine {
       });
     });
 
-    // Handle empty or tiny strokes
-    if (minX === Infinity || (maxX - minX) < 10) {
-      minX = 100; minY = 100; maxX = 200; maxY = 150;
+    // Add padding
+    const PADDING = 20;
+    minX -= PADDING;
+    minY -= PADDING;
+    maxX += PADDING;
+    maxY += PADDING;
+
+    const width = Math.max(maxX - minX, 50);
+    const height = Math.max(maxY - minY, 50);
+
+    // 2. Rasterize strokes to a temporary canvas for OCR
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const ctx = tempCanvas.getContext('2d');
+    
+    if (ctx) {
+      // White background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Draw strokes in solid black for best OCR results
+      ctx.fillStyle = '#000000';
+      
+      strokes.forEach(stroke => {
+        const localPoints = stroke.points.map(p => [p.x - minX, p.y - minY, p.pressure || 0.5]);
+        const outline = getStroke(localPoints, {
+          size: stroke.size,
+          thinning: 0.5,
+          smoothing: 0.5,
+          streamline: 0.5,
+        });
+
+        if (outline.length > 0) {
+          ctx.beginPath();
+          ctx.moveTo(outline[0][0], outline[0][1]);
+          for (let i = 1; i < outline.length; i++) {
+            ctx.lineTo(outline[i][0], outline[i][1]);
+          }
+          ctx.fill();
+        }
+      });
     }
 
-    const width = maxX - minX;
-    const height = maxY - minY;
+    const dataUrl = tempCanvas.toDataURL('image/png');
 
-    // Simulate OCR Confidence (Random between 80 and 100)
-    const confidence = Math.floor(Math.random() * 21) + 80;
-    
-    // Determine fontSize based on stroke bounding box height
-    const fontSize = Math.max(24, Math.floor(height * 0.8));
+    // 3. Run Tesseract OCR (Turkish language)
+    let textContent = "Metin anlaşılamadı...";
+    let confidence = 50;
 
-    // Mock words based on length or just randomly
-    const mockWords = ["Merhaba", "AI Engine", "Harika", "Notlar", "Önemli", "Proje", "Yapay Zeka", "Kaligrafi"];
-    const textContent = mockWords[Math.floor(Math.random() * mockWords.length)];
+    try {
+      const result = await Tesseract.recognize(dataUrl, 'tur', {
+        logger: m => console.log(m)
+      });
+      textContent = result.data.text.trim();
+      confidence = result.data.confidence;
+    } catch (e) {
+      console.error("OCR Error:", e);
+    }
+
+    if (!textContent) {
+      textContent = "?";
+    }
+
+    const fontSize = Math.max(24, Math.floor((height - PADDING * 2) * 0.8));
 
     return {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
       type: 'text',
-      x: minX,
-      y: minY,
-      width,
-      height,
+      x: minX + PADDING,
+      y: minY + PADDING,
+      width: width - PADDING * 2,
+      height: height - PADDING * 2,
       content: textContent,
       color: color,
       fontSize: fontSize,

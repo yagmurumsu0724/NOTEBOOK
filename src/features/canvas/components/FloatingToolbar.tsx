@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { 
   PenTool, Highlighter, Eraser, Type, MousePointer2, 
-  Hand, ChevronRight, ChevronLeft, Image as ImageIcon, Sparkles, Shapes, Sticker, Layout
+  Hand, ChevronRight, ChevronLeft, Image as ImageIcon, Sparkles, Shapes, Sticker, Layout,
+  Ruler, Settings2, Plus, Minus
 } from 'lucide-react';
 import type { ToolType } from '../../../store/useCanvasStore';
+import { useCanvasStore } from '../../../store/useCanvasStore';
+import { useStore } from '../../../store/useStore';
 import { IconButton } from '../../../components/ui/IconButton';
 
 interface FloatingToolbarProps {
@@ -21,6 +24,8 @@ interface FloatingToolbarProps {
   onOpenBackgrounds: () => void;
   isAIMode: boolean;
   setIsAIMode: (val: boolean) => void;
+  onOpenPenSettings: () => void;
+  notebookId: string;
 }
 
 const tools = [
@@ -33,10 +38,27 @@ const tools = [
 ] as const;
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
-  tool, setTool, currentColor, currentSize, setCurrentSize, onOpenColorStudio, onOpenAI, onAddImage, onOpenShapes, onOpenStickers, onOpenBackgrounds, isAIMode, setIsAIMode
+  tool, setTool, currentColor, currentSize, setCurrentSize, onOpenColorStudio, onOpenAI, onAddImage, onOpenShapes, onOpenStickers, onOpenBackgrounds, isAIMode, setIsAIMode, onOpenPenSettings, notebookId
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const dragControls = useDragControls();
+
+  const ruler = useCanvasStore(state => state.ruler);
+  const setRuler = useCanvasStore(state => state.setRuler);
+
+  const notebook = useStore(state => state.notebooks.find(n => n.id === notebookId));
+  const updateNotebook = useStore(state => state.updateNotebook);
+  const pageCount = notebook?.pageCount || 30;
+
+  const handleAddPage = () => {
+    updateNotebook(notebookId, { pageCount: pageCount + 1 });
+  };
+
+  const handleRemovePage = () => {
+    if (pageCount > 1) {
+      updateNotebook(notebookId, { pageCount: pageCount - 1 });
+    }
+  };
 
   return (
     <motion.div
@@ -44,11 +66,11 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       dragControls={dragControls}
       dragListener={false}
       dragMomentum={false}
-      initial={{ x: window.innerWidth / 2 - 200, y: window.innerHeight - 100 }}
-      className="fixed z-50 flex items-center shadow-2xl rounded-2xl"
+      initial={{ x: window.innerWidth / 2 - 300, y: window.innerHeight - 100 }}
+      className="fixed z-[9999] flex items-center shadow-2xl rounded-2xl"
       style={{
         position: 'fixed',
-        zIndex: 50,
+        zIndex: 9999,
         background: 'rgba(255, 255, 255, 0.85)',
         backdropFilter: 'blur(16px)',
         border: '1px solid rgba(255, 255, 255, 0.4)',
@@ -89,10 +111,23 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
               <div className="w-[1px] h-6 bg-gray-300 mx-1 opacity-50 flex-shrink-0" />
               
+              <IconButton 
+                icon={<Settings2 size={22} />} 
+                variant="ghost" 
+                onClick={onOpenPenSettings} 
+                title="Kalem Ayarları" 
+              />
+              <IconButton 
+                icon={<Ruler size={22} color={ruler.active ? 'var(--color-mint)' : undefined} />} 
+                variant={ruler.active ? 'solid' : 'ghost'} 
+                onClick={() => setRuler({ active: !ruler.active })} 
+                title="Cetvel" 
+              />
               <IconButton icon={<Shapes size={22} />} variant="ghost" onClick={onOpenShapes} title="Hazır Şekiller" />
               <IconButton icon={<Sticker size={22} />} variant="ghost" onClick={onOpenStickers} title="Çıkartmalar" />
               <IconButton icon={<ImageIcon size={22} />} variant="ghost" onClick={onAddImage} title="Görsel Ekle" />
               <IconButton icon={<Layout size={22} />} variant="ghost" onClick={onOpenBackgrounds} title="Arkaplan ve Sayfa Ayarları" />
+              
               <div 
                 className={`relative flex items-center p-1 rounded-lg ${isAIMode ? 'bg-purple-100 border border-purple-300' : ''}`}
                 title="AI El Yazısı Motoru"
@@ -109,6 +144,19 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
               <div className="w-[1px] h-6 bg-gray-300 mx-1 opacity-50 flex-shrink-0" />
 
+              {/* Page Control */}
+              <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1 border border-gray-200">
+                <button onClick={handleRemovePage} className="p-1 hover:bg-gray-200 rounded">
+                  <Minus size={14} />
+                </button>
+                <span className="text-xs font-bold text-gray-700 w-16 text-center">{pageCount} Sayfa</span>
+                <button onClick={handleAddPage} className="p-1 hover:bg-gray-200 rounded">
+                  <Plus size={14} />
+                </button>
+              </div>
+
+              <div className="w-[1px] h-6 bg-gray-300 mx-1 opacity-50 flex-shrink-0" />
+
               {/* Color Preview & Studio Button */}
               <div 
                 className="w-8 h-8 rounded-full cursor-pointer flex items-center justify-center shadow-sm ml-1 relative flex-shrink-0"
@@ -116,18 +164,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                 onClick={onOpenColorStudio}
                 title="Renk Stüdyosu (Color Studio)"
               >
-              </div>
-              
-              {/* Size slider (simplified) */}
-              <div className="flex flex-col gap-1 ml-3 mr-2 flex-shrink-0">
-                <input 
-                  type="range" 
-                  min="1" max="20" 
-                  value={currentSize} 
-                  onChange={(e) => setCurrentSize(parseInt(e.target.value))}
-                  className="w-16 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  title={`Kalınlık: ${currentSize}`}
-                />
               </div>
             </motion.div>
           )}
