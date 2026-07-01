@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, Download } from 'lucide-react';
 import { IconButton } from '../../components/ui/IconButton';
-import { useCanvasStore } from '../../store/useCanvasStore';
+import { useCanvasStore, migrateStrokes } from '../../store/useCanvasStore';
 import { useStore } from '../../store/useStore';
 import type { Stroke, ToolType, CanvasElement } from '../../store/useCanvasStore';
 import { FloatingToolbar } from './components/FloatingToolbar';
@@ -92,7 +92,7 @@ export const Canvas: React.FC = () => {
 
   useEffect(() => {
     if (notebookId) {
-      strokesRef.current = useCanvasStore.getState().notebookStrokes[notebookId] || [];
+      strokesRef.current = migrateStrokes(useCanvasStore.getState().notebookStrokes[notebookId] || []);
       const title = useStore.getState().notebooks.find(n => n.id === notebookId)?.title || 'Sayfa';
       document.title = `KawaiiNote | ${title}`;
       needsRender.current = true;
@@ -276,12 +276,12 @@ export const Canvas: React.FC = () => {
 
     allStrokes.forEach(stroke => {
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = stroke.color;
+      ctx.fillStyle = stroke.brush?.color || stroke.color || '#000';
       
-      let finalSize = stroke.size * (globalPenSettings.size / 4);
+      let finalSize = (stroke.brush?.size || stroke.size || 4) * (globalPenSettings.size / 4);
       let thinning = globalPenSettings.thinning;
       let streamline = globalPenSettings.streamline;
-      let smoothing = globalPenSettings.smoothing;
+      let smoothing = stroke.brush?.smoothing ?? globalPenSettings.smoothing;
       
       if (stroke.tool === 'eraser') {
         const type = useCanvasStore.getState().eraserType;
@@ -304,20 +304,20 @@ export const Canvas: React.FC = () => {
         }
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fillStyle = 'rgba(0,0,0,1)';
-        finalSize = stroke.size * 3 * (camera.z < 1 ? 1/camera.z : 1);
+        finalSize = (stroke.brush?.size || stroke.size || 4) * 3 * (camera.z < 1 ? 1/camera.z : 1);
         thinning = 0;
       } else if (stroke.tool === 'highlighter') {
         ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = stroke.color;
-        finalSize = stroke.size * 4;
+        ctx.fillStyle = stroke.brush?.color || stroke.color || '#FDFD96';
+        finalSize = (stroke.brush?.size || stroke.size || 4) * 4;
         ctx.globalAlpha = 0.4;
         thinning = -0.2;
       } else if (stroke.tool === 'fountain') {
-        finalSize = stroke.size * 2;
+        finalSize = (stroke.brush?.size || stroke.size || 4) * 2;
         thinning = 0.7;
         streamline = 0.8;
       } else if (stroke.tool === 'gel') {
-        finalSize = stroke.size;
+        finalSize = (stroke.brush?.size || stroke.size || 4);
         thinning = 0.1;
       }
       
@@ -519,8 +519,21 @@ export const Canvas: React.FC = () => {
       const type = useCanvasStore.getState().eraserType;
       if (type === 'stroke') {
         isDrawing.current = true;
-        // Create an invisible active stroke to satisfy state
-        activeStrokeRef.current = { color: 'transparent', size: 1, tool, points: [] };
+        const timestamp = Date.now();
+        activeStrokeRef.current = {
+          id: `stroke_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
+          tool,
+          points: [],
+          brush: {
+            size: 1,
+            opacity: 1,
+            flow: 1.0,
+            color: 'transparent',
+            smoothing: 0.5
+          },
+          boundingBox: { x: 0, y: 0, width: 0, height: 0 },
+          createdAt: timestamp
+        };
         if (canvasRef.current) canvasRef.current.setPointerCapture(e.pointerId);
         return;
       }
@@ -538,11 +551,21 @@ export const Canvas: React.FC = () => {
       actualColor = '#FDFD96';
     }
 
+    const timestamp = Date.now();
+    const size = tool === 'highlighter' ? currentSize * 2 : currentSize;
     activeStrokeRef.current = {
-      color: actualColor,
-      size: tool === 'highlighter' ? currentSize * 2 : currentSize,
+      id: `stroke_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
       tool,
-      points: [{ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5 }]
+      points: [{ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5, timestamp }],
+      brush: {
+        size,
+        opacity: tool === 'highlighter' ? 0.4 : 1.0,
+        flow: 1.0,
+        color: actualColor,
+        smoothing: 0.5
+      },
+      boundingBox: { x: wPos.x, y: wPos.y, width: 0, height: 0 },
+      createdAt: timestamp
     };
     if (canvasRef.current) {
       canvasRef.current.setPointerCapture(e.pointerId);
@@ -567,23 +590,37 @@ export const Canvas: React.FC = () => {
       });
     } else if (isDrawing.current && activeStrokeRef.current) {
       const wPos = screenToWorld(e.clientX, e.clientY);
-      activeStrokeRef.current.points.push({ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5 });
+      const timestamp = Date.now();
+      activeStrokeRef.current.points.push({ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5, timestamp });
+      
+      // Update boundingBox incrementally
+      const bbox = activeStrokeRef.current.boundingBox;
+      const minX = bbox.width === 0 && bbox.height === 0 ? wPos.x : Math.min(bbox.x, wPos.x);
+      const minY = bbox.width === 0 && bbox.height === 0 ? wPos.y : Math.min(bbox.y, wPos.y);
+      const maxX = bbox.width === 0 && bbox.height === 0 ? wPos.x : Math.max(bbox.x + bbox.width, wPos.x);
+      const maxY = bbox.width === 0 && bbox.height === 0 ? wPos.y : Math.max(bbox.y + bbox.height, wPos.y);
+      activeStrokeRef.current.boundingBox = {
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY
+      };
       
       if (tool === 'eraser' && useCanvasStore.getState().eraserType === 'stroke') {
          const thresholdSq = Math.pow(currentSize * 2 + 5, 2);
          const strokes = strokesRef.current;
-         const toDelete: number[] = [];
-         strokes.forEach((stroke, idx) => {
+         const toDeleteIds: string[] = [];
+         strokes.forEach((stroke) => {
            for (let i = 0; i < stroke.points.length - 1; i++) {
              if (distToSegmentSquared(wPos, stroke.points[i], stroke.points[i+1]) < thresholdSq) {
-               toDelete.push(idx);
+               toDeleteIds.push(stroke.id);
                break;
              }
            }
          });
-         if (toDelete.length > 0) {
-           useCanvasStore.getState().removeStrokes(notebookId!, toDelete);
-           strokesRef.current = strokesRef.current.filter((_, i) => !toDelete.includes(i));
+         if (toDeleteIds.length > 0) {
+           useCanvasStore.getState().removeStrokes(notebookId!, toDeleteIds);
+           strokesRef.current = strokesRef.current.filter((s) => !toDeleteIds.includes(s.id));
          }
       }
       
@@ -607,15 +644,15 @@ export const Canvas: React.FC = () => {
           if (type === 'lasso') {
              const polygon = activeStrokeRef.current.points;
              const strokes = strokesRef.current;
-             const toDelete: number[] = [];
-             strokes.forEach((s, idx) => {
+             const toDeleteIds: string[] = [];
+             strokes.forEach((s) => {
                if (s.points.some(p => pointInPolygon(p, polygon))) {
-                 toDelete.push(idx);
+                 toDeleteIds.push(s.id);
                }
              });
-             if (toDelete.length > 0) {
-               useCanvasStore.getState().removeStrokes(notebookId!, toDelete);
-               strokesRef.current = strokesRef.current.filter((_, i) => !toDelete.includes(i));
+             if (toDeleteIds.length > 0) {
+               useCanvasStore.getState().removeStrokes(notebookId!, toDeleteIds);
+               strokesRef.current = strokesRef.current.filter((s) => !toDeleteIds.includes(s.id));
              }
              activeStrokeRef.current = null;
              needsRender.current = true;

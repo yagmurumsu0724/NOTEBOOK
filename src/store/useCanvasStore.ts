@@ -2,10 +2,84 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { temporal } from 'zundo';
 
-export interface StrokePoint { x: number; y: number; pressure: number }
+export interface StrokePoint {
+  x: number;
+  y: number;
+  pressure: number;
+  tiltX?: number;
+  tiltY?: number;
+  timestamp: number;
+}
 export type ToolType = 'fountain' | 'gel' | 'highlighter' | 'eraser' | 'pan' | 'text' | 'image' | 'select';
 export type EraserType = 'pixel' | 'stroke' | 'lasso';
-export interface Stroke { points: StrokePoint[]; color: string; size: number; tool: ToolType }
+
+export interface StrokeBrush {
+  size: number;
+  opacity: number;
+  flow: number;
+  color: string;
+  smoothing: number;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Stroke {
+  id: string;
+  tool: ToolType;
+  points: StrokePoint[];
+  brush: StrokeBrush;
+  boundingBox: Rect;
+  createdAt: number;
+}
+
+export function migrateStrokes(strokes: any[]): Stroke[] {
+  if (!strokes) return [];
+  return strokes.map((s, idx) => {
+    if (s && s.id && s.brush && s.boundingBox) {
+      return s as Stroke;
+    }
+    const points: StrokePoint[] = (s.points || []).map((p: any) => ({
+      x: typeof p.x === 'number' ? p.x : 0,
+      y: typeof p.y === 'number' ? p.y : 0,
+      pressure: typeof p.pressure === 'number' ? p.pressure : 0.5,
+      timestamp: typeof p.timestamp === 'number' ? p.timestamp : Date.now()
+    }));
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    points.forEach(p => {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    });
+    if (minX === Infinity) {
+      minX = 0; minY = 0; maxX = 0; maxY = 0;
+    }
+    return {
+      id: s.id || `stroke_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
+      tool: s.tool || 'gel',
+      points,
+      brush: {
+        size: s.size || 4,
+        opacity: s.tool === 'highlighter' ? 0.4 : 1.0,
+        flow: 1.0,
+        color: s.color || '#000000',
+        smoothing: 0.5
+      },
+      boundingBox: {
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY
+      },
+      createdAt: s.createdAt || Date.now()
+    };
+  });
+}
 
 export type ElementType = 'text' | 'image';
 
@@ -43,7 +117,7 @@ interface CanvasState {
   notebookStrokes: Record<string, Stroke[]>;
   notebookElements: Record<string, CanvasElement[]>;
   addStroke: (notebookId: string, stroke: Stroke) => void;
-  removeStrokes: (notebookId: string, strokeIndices: number[]) => void;
+  removeStrokes: (notebookId: string, strokeIds: string[]) => void;
   clearStrokes: (notebookId: string) => void;
   addElement: (notebookId: string, element: CanvasElement) => void;
   updateElement: (notebookId: string, elementId: string, updates: Partial<CanvasElement>) => void;
@@ -74,14 +148,13 @@ export const useCanvasStore = create<CanvasState>()(
         eraserType: 'pixel',
         setEraserType: (type) => set({ eraserType: type }),
         addStroke: (notebookId, stroke) => set((state) => {
-          const existing = state.notebookStrokes[notebookId] || [];
+          const existing = migrateStrokes(state.notebookStrokes[notebookId] || []);
           return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: [...existing, stroke] } };
         }),
-        removeStrokes: (notebookId, strokeIndices) => set((state) => {
-          const existing = state.notebookStrokes[notebookId];
-          if (!existing) return state;
-          // Create a new array excluding the specified indices
-          const filtered = existing.filter((_, i) => !strokeIndices.includes(i));
+        removeStrokes: (notebookId, strokeIds) => set((state) => {
+          const existing = migrateStrokes(state.notebookStrokes[notebookId] || []);
+          if (existing.length === 0) return state;
+          const filtered = existing.filter(s => !strokeIds.includes(s.id));
           return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: filtered } };
         }),
         clearStrokes: (notebookId) => set((state) => {
