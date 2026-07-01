@@ -1,0 +1,75 @@
+:root {
+  /* Core Pastel & Kawaii Palette */
+  --color-sakura-light: #FFD1CE;
+  --color-sakura: #FFB7B2;
+  --color-sakura-dark: #FF9B94;
+  
+  --color-mint-light: #F0F8E2;
+  --color-mint: #E2F0CB;
+  --color-mint-dark: #C9E49D;
+  
+  --color-lavender-light: #DDD2EE;
+  --color-lavender: #C3B1E1;
+  --color-lavender-dark: #A68AD2;
+  
+  --color-lemon-light: #FEFEBA;
+  --color-lemon: #FDFD96;
+  --color-lemon-dark: #FBFB70;
+  
+  --color-sky-light: #C9DCE3;
+  --color-sky: #AEC6CF;
+  --color-sky-dark: #8DB0BC;
+  
+  --color-peach: #FFDAC1;
+  --color-melon: #FF9AA2;
+  
+  /* UI Colors */
+  --color-primary: var(--color-sakura);
+  --color-secondary: var(--color-mint);
+  --color-accent: var(--color-lavender);
+  
+  /* Backgrounds */
+  --bg-primary: #FAF9F6;
+  --bg-secondary: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.4);
+  --bg-glass-strong: rgba(255, 255, 255, 0.7);
+  
+  /* Text */
+  --text-primary: #2d3436;
+  --text-secondary: #636e72;
+  --text-tertiary: #b2bec3;
+  
+  /* Shadows */
+  --shadow-soft: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+  --shadow-hover: 0 12px 40px 0 rgba(31, 38, 135, 0.1);
+  --shadow-glow: 0 0 20px rgba(255, 183, 178, 0.4);
+  
+  /* Borders */
+  --border-radius-sm: 12px;
+  --border-radius-md: 20px;
+  --border-radius-lg: 32px;
+  --border-radius-full: 9999px;
+  
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  
+  /* Typography */
+  --font-family-base: 'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+[data-theme='dark'] {
+  --bg-primary: #121212;
+  --bg-secondary: #1e1e1e;
+  --bg-glass: rgba(20, 20, 20, 0.5);
+  --bg-glass-strong: rgba(30, 30, 30, 0.8);
+  --text-primary: #f5f6fa;
+  --text-secondary: #a4b0be;
+  --text-tertiary: #747d8c;
+  --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 20px rgba(166, 138, 210, 0.4);
+}

@@ -1,0 +1,88 @@
+/* Base Button */
+.kw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-base);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--border-radius-full);
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.kw-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Sizes */
+.kw-btn-sm { padding: 0.4rem 1rem; font-size: 0.875rem; }
+.kw-btn-md { padding: 0.6rem 1.5rem; font-size: 1rem; }
+.kw-btn-lg { padding: 0.8rem 2rem; font-size: 1.125rem; }
+
+/* Variants */
+.kw-btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 4px 14px 0 rgba(255, 183, 178, 0.39);
+}
+
+.kw-btn-secondary {
+  background: var(--color-secondary);
+  color: var(--text-primary);
+}
+
+.kw-btn-glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-soft);
+}
+
+.kw-btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+}
+.kw-btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme='dark'] .kw-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.kw-btn-icon-left { margin-right: 0.5rem; display: flex; }
+.kw-btn-icon-right { margin-left: 0.5rem; display: flex; }
+
+/* IconButton */
+.kw-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.kw-icon-btn-sm { width: 32px; height: 32px; }
+.kw-icon-btn-md { width: 44px; height: 44px; }
+.kw-icon-btn-lg { width: 56px; height: 56px; }
+
+.kw-icon-btn-solid {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.kw-icon-btn-glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-soft);
+}
