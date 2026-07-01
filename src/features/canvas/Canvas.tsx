@@ -18,6 +18,9 @@ import { getStroke } from 'perfect-freehand';
 import { AIHandwritingEngine } from './utils/aiHandwritingEngine';
 import { AIInsightPanel } from '../ai/components/AIInsightPanel';
 import { StrokeSmoother } from './engine/StrokeSmoother';
+import { PenTool } from './engine/tools/PenTool';
+import { EraserTool } from './engine/tools/EraserTool';
+import { LassoTool } from './engine/tools/LassoTool';
 import './Canvas.css';
 
 const EMPTY_ELEMENTS: CanvasElement[] = [];
@@ -42,7 +45,11 @@ const pointInPolygon = (point: {x: number, y: number}, vs: {x: number, y: number
   return inside;
 };
 
-// Removed unused allColors
+const toolsMap = {
+  pen: new PenTool(),
+  eraser: new EraserTool(),
+  lasso: new LassoTool(),
+};
 
 export const Canvas: React.FC = () => {
   const { notebookId } = useParams<{ notebookId: string }>();
@@ -91,6 +98,18 @@ export const Canvas: React.FC = () => {
   const activeStrokeRef = useRef<Stroke | null>(null);
   
   const dragInfo = useRef<{ id: string, startWorldX: number, startWorldY: number, startElX: number, startElY: number } | null>(null);
+
+  const getActiveToolInstance = () => {
+    if (tool === 'eraser') {
+      const type = useCanvasStore.getState().eraserType;
+      if (type === 'lasso') return toolsMap.lasso;
+      return toolsMap.eraser;
+    }
+    if (tool === 'gel' || tool === 'fountain' || tool === 'highlighter') {
+      return toolsMap.pen;
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (notebookId) {
@@ -517,62 +536,23 @@ export const Canvas: React.FC = () => {
       return;
     }
 
-    if (tool === 'eraser') {
-      const type = useCanvasStore.getState().eraserType;
-      if (type === 'stroke') {
-        isDrawing.current = true;
-        const timestamp = Date.now();
-        smootherRef.current.reset();
-        activeStrokeRef.current = {
-          id: `stroke_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
-          tool,
-          points: [],
-          brush: {
-            size: 1,
-            opacity: 1,
-            flow: 1.0,
-            color: 'transparent',
-            smoothing: 0.5
-          },
-          boundingBox: { x: 0, y: 0, width: 0, height: 0 },
-          createdAt: timestamp
-        };
-        if (canvasRef.current) canvasRef.current.setPointerCapture(e.pointerId);
-        return;
-      }
-    }
-    
-    isDrawing.current = true;
-    const wPos = screenToWorld(e.clientX, e.clientY);
-    smootherRef.current.reset();
-    
-    let actualColor = currentColor;
-    if (currentColor.startsWith('var(')) {
-      const varName = currentColor.slice(4, -1);
-      actualColor = getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || '#000';
-    }
-    if(tool === 'highlighter' && currentColor.startsWith('var(--text')) {
-      actualColor = '#FDFD96';
-    }
-
-    const timestamp = Date.now();
-    const size = tool === 'highlighter' ? currentSize * 2 : currentSize;
-    activeStrokeRef.current = {
-      id: `stroke_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
-      tool,
-      points: [{ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5, timestamp }],
-      brush: {
-        size,
-        opacity: tool === 'highlighter' ? 0.4 : 1.0,
-        flow: 1.0,
-        color: actualColor,
-        smoothing: 0.5
-      },
-      boundingBox: { x: wPos.x, y: wPos.y, width: 0, height: 0 },
-      createdAt: timestamp
-    };
-    if (canvasRef.current) {
-      canvasRef.current.setPointerCapture(e.pointerId);
+    const activeToolInstance = getActiveToolInstance();
+    if (activeToolInstance) {
+      isDrawing.current = true;
+      const wPos = screenToWorld(e.clientX, e.clientY);
+      const toolContext = {
+        notebookId: notebookId!,
+        currentColor,
+        currentSize,
+        canvasRef,
+        activeStrokeRef,
+        strokesRef,
+        needsRender,
+        screenToWorld,
+        smoother: smootherRef.current
+      };
+      activeToolInstance.onPointerDown(e, wPos, toolContext);
+      return;
     }
   };
 
@@ -593,56 +573,22 @@ export const Canvas: React.FC = () => {
         y: dragInfo.current.startElY + dy
       });
     } else if (isDrawing.current && activeStrokeRef.current) {
-      const wPos = screenToWorld(e.clientX, e.clientY);
-      const timestamp = Date.now();
-      
-      // Filter points for tremor reduction (Kalman filter)
-      const filtered = smootherRef.current.filter(wPos.x, wPos.y);
-      activeStrokeRef.current.points.push({ 
-        x: filtered.x, 
-        y: filtered.y, 
-        pressure: e.pressure || 0.5, 
-        timestamp 
-      });
-
-      // Calculate dynamic pressure/velocity for fountain stylus effect
-      const pts = activeStrokeRef.current.points;
-      const idx = pts.length - 1;
-      const { pressure } = StrokeSmoother.calculatePressureAndVelocity(pts, idx);
-      pts[idx].pressure = pressure;
-      
-      // Update boundingBox incrementally
-      const bbox = activeStrokeRef.current.boundingBox;
-      const minX = bbox.width === 0 && bbox.height === 0 ? filtered.x : Math.min(bbox.x, filtered.x);
-      const minY = bbox.width === 0 && bbox.height === 0 ? filtered.y : Math.min(bbox.y, filtered.y);
-      const maxX = bbox.width === 0 && bbox.height === 0 ? filtered.x : Math.max(bbox.x + bbox.width, filtered.x);
-      const maxY = bbox.width === 0 && bbox.height === 0 ? filtered.y : Math.max(bbox.y + bbox.height, filtered.y);
-      activeStrokeRef.current.boundingBox = {
-        x: minX,
-        y: minY,
-        width: maxX - minX,
-        height: maxY - minY
-      };
-      
-      if (tool === 'eraser' && useCanvasStore.getState().eraserType === 'stroke') {
-         const thresholdSq = Math.pow(currentSize * 2 + 5, 2);
-         const strokes = strokesRef.current;
-         const toDeleteIds: string[] = [];
-         strokes.forEach((stroke) => {
-           for (let i = 0; i < stroke.points.length - 1; i++) {
-             if (distToSegmentSquared(wPos, stroke.points[i], stroke.points[i+1]) < thresholdSq) {
-               toDeleteIds.push(stroke.id);
-               break;
-             }
-           }
-         });
-         if (toDeleteIds.length > 0) {
-           useCanvasStore.getState().removeStrokes(notebookId!, toDeleteIds);
-           strokesRef.current = strokesRef.current.filter((s) => !toDeleteIds.includes(s.id));
-         }
+      const activeToolInstance = getActiveToolInstance();
+      if (activeToolInstance) {
+        const wPos = screenToWorld(e.clientX, e.clientY);
+        const toolContext = {
+          notebookId: notebookId!,
+          currentColor,
+          currentSize,
+          canvasRef,
+          activeStrokeRef,
+          strokesRef,
+          needsRender,
+          screenToWorld,
+          smoother: smootherRef.current
+        };
+        activeToolInstance.onPointerMove(e, wPos, toolContext);
       }
-      
-      needsRender.current = true;
     }
   };
 
@@ -654,75 +600,60 @@ export const Canvas: React.FC = () => {
       dragInfo.current = null;
       if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
     }
-    if (isDrawing.current) {
+    if (isDrawing.current && activeStrokeRef.current) {
       isDrawing.current = false;
-      if (activeStrokeRef.current) {
-        if (activeStrokeRef.current.tool === 'eraser') {
+      const activeToolInstance = getActiveToolInstance();
+      if (activeToolInstance) {
+        const wPos = screenToWorld(e.clientX, e.clientY);
+        const toolContext = {
+          notebookId: notebookId!,
+          currentColor,
+          currentSize,
+          canvasRef,
+          activeStrokeRef,
+          strokesRef,
+          needsRender,
+          screenToWorld,
+          smoother: smootherRef.current
+        };
+        activeToolInstance.onPointerUp(e, wPos, toolContext);
+        
+        // Save logic (only if activeStrokeRef exists and has points, and it's not a temporary lasso/stroke eraser preview)
+        if (activeStrokeRef.current && activeStrokeRef.current.points.length > 0) {
           const type = useCanvasStore.getState().eraserType;
-          if (type === 'lasso') {
-             const polygon = activeStrokeRef.current.points;
-             const strokes = strokesRef.current;
-             const toDeleteIds: string[] = [];
-             strokes.forEach((s) => {
-               if (s.points.some(p => pointInPolygon(p, polygon))) {
-                 toDeleteIds.push(s.id);
-               }
-             });
-             if (toDeleteIds.length > 0) {
-               useCanvasStore.getState().removeStrokes(notebookId!, toDeleteIds);
-               strokesRef.current = strokesRef.current.filter((s) => !toDeleteIds.includes(s.id));
-             }
-             activeStrokeRef.current = null;
-             needsRender.current = true;
-             if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
-             return;
-          } else if (type === 'stroke') {
-             activeStrokeRef.current = null;
-             needsRender.current = true;
-             if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
-             return; 
-          }
-        }
-
-        // Optimize points with Douglas-Peucker before saving (reduces size & speeds up render)
-        if (activeStrokeRef.current.points.length > 2) {
-          activeStrokeRef.current.points = StrokeSmoother.optimizePoints(activeStrokeRef.current.points, 0.35);
-        }
-
-        strokesRef.current.push(activeStrokeRef.current);
-        if (notebookId) {
-          useCanvasStore.getState().addStroke(notebookId, activeStrokeRef.current);
+          const isTemporaryEraser = activeStrokeRef.current.tool === 'eraser' && 
+            (type === 'lasso' || type === 'stroke');
           
-          if (isAIMode) {
-            AIHandwritingEngine.detector.addStroke(activeStrokeRef.current);
-            if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
-            
-            aiTimeoutRef.current = setTimeout(async () => {
-              if (AIHandwritingEngine.detector.shouldProcess()) {
-                const strokes = AIHandwritingEngine.detector.getAndClearStrokes();
-                const actualColor = currentColor.startsWith('var(') 
-                  ? getComputedStyle(document.documentElement).getPropertyValue(currentColor.slice(4, -1)).trim() 
-                  : currentColor;
+          if (!isTemporaryEraser) {
+            strokesRef.current.push(activeStrokeRef.current);
+            if (notebookId) {
+              useCanvasStore.getState().addStroke(notebookId, activeStrokeRef.current);
+              
+              if (isAIMode) {
+                AIHandwritingEngine.detector.addStroke(activeStrokeRef.current);
+                if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
                 
-                const newTextElement = await AIHandwritingEngine.performOCR(strokes, currentFont, actualColor || '#000');
-                
-                // Add the new text element
-                useCanvasStore.getState().addElement(notebookId, newTextElement);
-                
-                // Clear original strokes since they are now encapsulated inside newTextElement
-                useCanvasStore.getState().clearStrokes(notebookId); // Simplified for demo: assuming all uncommitted strokes are the word. In a real app we'd remove exactly these strokes from the store.
-                
-                needsRender.current = true;
+                aiTimeoutRef.current = setTimeout(async () => {
+                  if (AIHandwritingEngine.detector.shouldProcess()) {
+                    const strokes = AIHandwritingEngine.detector.getAndClearStrokes();
+                    const actualColor = currentColor.startsWith('var(') 
+                      ? getComputedStyle(document.documentElement).getPropertyValue(currentColor.slice(4, -1)).trim() 
+                      : currentColor;
+                    
+                    const newTextElement = await AIHandwritingEngine.performOCR(strokes, currentFont, actualColor || '#000');
+                    useCanvasStore.getState().addElement(notebookId, newTextElement);
+                    useCanvasStore.getState().clearStrokes(notebookId);
+                    needsRender.current = true;
+                  }
+                }, 1000);
               }
-            }, 1000);
+            }
           }
         }
-        activeStrokeRef.current = null;
-        needsRender.current = true;
       }
-      if (canvasRef.current) {
-        canvasRef.current.releasePointerCapture(e.pointerId);
-      }
+      activeStrokeRef.current = null;
+      needsRender.current = true;
+      if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
     }
   };
 
