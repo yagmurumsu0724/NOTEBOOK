@@ -27,6 +27,7 @@ export interface Notebook {
   isDailyNote?: boolean;
   dailyDate?: string;
   actionItems?: { id: string; text: string; completed: boolean }[];
+  aiSummary?: string;
 }
 
 export interface Folder {

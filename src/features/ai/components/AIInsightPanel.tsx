@@ -33,14 +33,17 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ isOpen, onClose,
       const result = await AIInsightEngine.analyze(noteContent);
       setInsight(result);
       
-      // Auto save action items to store
-      if (notebookId && result.actionItems && result.actionItems.length > 0) {
-        const tasks = result.actionItems.map((item, idx) => ({
-          id: `task_${Date.now()}_${idx}`,
-          text: item,
-          completed: false
-        }));
-        useStore.getState().updateNotebook(notebookId, { actionItems: tasks });
+      // Auto save action items & summary to store
+      if (notebookId) {
+        const updates: any = { aiSummary: result.summary };
+        if (result.actionItems && result.actionItems.length > 0) {
+          updates.actionItems = result.actionItems.map((item, idx) => ({
+            id: `task_${Date.now()}_${idx}`,
+            text: item,
+            completed: false
+          }));
+        }
+        useStore.getState().updateNotebook(notebookId, updates);
       }
     } catch (err: any) {
       setError(err.message);

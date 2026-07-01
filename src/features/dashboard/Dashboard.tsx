@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2, Calendar, ListTodo } from 'lucide-react';
+import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2, Calendar, ListTodo, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { FolderCard } from './components/FolderCard';
@@ -10,9 +10,10 @@ import { CreateNotebookModal } from './components/CreateNotebookModal';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { SemanticSearchEngine, type SearchResult } from '../ai/SemanticSearch';
 import { TasksDashboard } from './components/TasksDashboard';
+import { TimelineView } from './components/TimelineView';
 import './Dashboard.css';
 
-type ViewMode = 'all' | 'pinned' | 'folder' | 'tag' | 'daily' | 'tasks';
+type ViewMode = 'all' | 'pinned' | 'folder' | 'tag' | 'daily' | 'tasks' | 'timeline';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -149,6 +150,11 @@ export const Dashboard: React.FC = () => {
             isActive={viewMode === 'tasks' && !isSearching} 
             onClick={() => { setViewMode('tasks'); setSearchQuery(''); }} 
           />
+          <NavItem 
+            icon={Clock} label="Zaman Tüneli"
+            isActive={viewMode === 'timeline' && !isSearching} 
+            onClick={() => { setViewMode('timeline'); setSearchQuery(''); }} 
+          />
           
           {/* Quick daily note button */}
           <button
@@ -212,10 +218,15 @@ export const Dashboard: React.FC = () => {
                viewMode === 'all' ? 'Tüm Notlar' :
                viewMode === 'pinned' ? '⭐ Pinlenen Defterler' :
                viewMode === 'tag' ? `#${activeTag} Etiketli Notlar` :
+               viewMode === 'daily' ? '📅 Günlük Notlar' :
+               viewMode === 'tasks' ? '☑️ Görevlerim (Action Items)' :
+               viewMode === 'timeline' ? '⏳ Zaman Tüneli (Timeline)' :
                currentFolderId ? getFolderPath(currentFolderId) : '📁 Ana Dizin'}
             </h2>
             <p className="dashboard-view-subtitle">
-              {displayNotebooks.length} defter{displayFolders.length > 0 ? `, ${displayFolders.length} klasör` : ''}
+              {viewMode === 'timeline' ? `${notebooks.length} defter kronolojisi` : 
+               viewMode === 'tasks' ? `${pendingTasksCount} bekleyen görev` :
+               `${displayNotebooks.length} defter${displayFolders.length > 0 ? `, ${displayFolders.length} klasör` : ''}`}
             </p>
           </div>
 
@@ -281,6 +292,8 @@ export const Dashboard: React.FC = () => {
 
         {viewMode === 'tasks' && !isSearching ? (
           <TasksDashboard />
+        ) : viewMode === 'timeline' && !isSearching ? (
+          <TimelineView />
         ) : (
           <>
             {viewMode === 'folder' && !isSearching && <Breadcrumb />}
