@@ -3,9 +3,9 @@ import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { 
   PenTool, Highlighter, Eraser, Type, MousePointer2, 
   Hand, ChevronRight, ChevronLeft, Image as ImageIcon, Sparkles, Shapes, Sticker, Layout,
-  Ruler, Settings2, Plus, Minus
+  Ruler, Settings2, Plus, Minus, Lasso, Scissors, Circle
 } from 'lucide-react';
-import type { ToolType } from '../../../store/useCanvasStore';
+import type { ToolType, EraserType } from '../../../store/useCanvasStore';
 import { useCanvasStore } from '../../../store/useCanvasStore';
 import { useStore } from '../../../store/useStore';
 import { IconButton } from '../../../components/ui/IconButton';
@@ -45,6 +45,8 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
   const ruler = useCanvasStore(state => state.ruler);
   const setRuler = useCanvasStore(state => state.setRuler);
+  const eraserType = useCanvasStore(state => state.eraserType);
+  const setEraserType = useCanvasStore(state => state.setEraserType);
 
   const notebook = useStore(state => state.notebooks.find(n => n.id === notebookId));
   const updateNotebook = useStore(state => state.updateNotebook);
@@ -108,6 +110,34 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                   title={t.label}
                 />
               ))}
+
+              {tool === 'eraser' && (
+                <motion.div 
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 'auto', opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  className="flex items-center bg-gray-100 rounded-lg p-1 ml-1"
+                >
+                  <IconButton 
+                    icon={<Circle size={18} />} 
+                    variant={eraserType === 'pixel' ? 'solid' : 'ghost'} 
+                    onClick={() => setEraserType('pixel')} 
+                    title="Nokta Silgi (Piksel)" 
+                  />
+                  <IconButton 
+                    icon={<Scissors size={18} />} 
+                    variant={eraserType === 'stroke' ? 'solid' : 'ghost'} 
+                    onClick={() => setEraserType('stroke')} 
+                    title="Kuyruklu Silgi (Çizgi)" 
+                  />
+                  <IconButton 
+                    icon={<Lasso size={18} />} 
+                    variant={eraserType === 'lasso' ? 'solid' : 'ghost'} 
+                    onClick={() => setEraserType('lasso')} 
+                    title="Kafes Silgi (Alan Seçimi)" 
+                  />
+                </motion.div>
+              )}
 
               <div className="w-[1px] h-6 bg-gray-300 mx-1 opacity-50 flex-shrink-0" />
               

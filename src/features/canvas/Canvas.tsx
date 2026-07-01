@@ -20,12 +20,33 @@ import './Canvas.css';
 
 const EMPTY_ELEMENTS: CanvasElement[] = [];
 
+const distToSegmentSquared = (p: {x: number, y: number}, v: {x: number, y: number}, w: {x: number, y: number}) => {
+  const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+  if (l2 === 0) return (p.x - v.x) ** 2 + (p.y - v.y) ** 2;
+  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return (p.x - (v.x + t * (w.x - v.x))) ** 2 + (p.y - (v.y + t * (w.y - v.y))) ** 2;
+};
+
+const pointInPolygon = (point: {x: number, y: number}, vs: {x: number, y: number}[]) => {
+  let x = point.x, y = point.y;
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    let xi = vs[i].x, yi = vs[i].y;
+    let xj = vs[j].x, yj = vs[j].y;
+    let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 // Removed unused allColors
 
 export const Canvas: React.FC = () => {
   const { notebookId } = useParams<{ notebookId: string }>();
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [camera, setCamera] = useState({ x: 0, y: 0, z: 1 });
@@ -60,6 +81,7 @@ export const Canvas: React.FC = () => {
   const isPanning = useRef(false);
   const isDrawing = useRef(false);
   const needsRender = useRef(true); 
+  const needsBgRender = useRef(true);
   const lastMousePos = useRef({ x: 0, y: 0 });
   const strokesRef = useRef<Stroke[]>([]);
   const activeStrokeRef = useRef<Stroke | null>(null);
@@ -72,6 +94,7 @@ export const Canvas: React.FC = () => {
       const title = useStore.getState().notebooks.find(n => n.id === notebookId)?.title || 'Sayfa';
       document.title = `KawaiiNote | ${title}`;
       needsRender.current = true;
+      needsBgRender.current = true;
     }
   }, [notebookId]);
 
@@ -129,6 +152,7 @@ export const Canvas: React.FC = () => {
       useCanvasStore.getState().clearStrokes(notebookId);
       strokesRef.current = [];
       needsRender.current = true;
+      needsBgRender.current = true;
     }
   };
 
@@ -258,6 +282,24 @@ export const Canvas: React.FC = () => {
       let smoothing = globalPenSettings.smoothing;
       
       if (stroke.tool === 'eraser') {
+        const type = useCanvasStore.getState().eraserType;
+        if (stroke === activeStrokeRef.current && type === 'lasso') {
+           ctx.globalCompositeOperation = 'source-over';
+           ctx.strokeStyle = '#3b82f6';
+           ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+           ctx.setLineDash([5, 5]);
+           ctx.lineWidth = 2;
+           ctx.beginPath();
+           if(stroke.points.length > 0) ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+           for(let i=1; i<stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+           ctx.closePath();
+           ctx.fill();
+           ctx.stroke();
+           ctx.setLineDash([]);
+           return;
+        } else if (stroke === activeStrokeRef.current && type === 'stroke') {
+           return; // do not draw anything
+        }
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fillStyle = 'rgba(0,0,0,1)';
         finalSize = stroke.size * 3 * (camera.z < 1 ? 1/camera.z : 1);
@@ -305,12 +347,16 @@ export const Canvas: React.FC = () => {
       const zoomDelta = e.deltaY * zoomSensitivity;
       setCamera(prev => {
         const newZ = Math.min(Math.max(0.1, prev.z - zoomDelta), 5);
-        if (prev.z !== newZ) needsRender.current = true;
+        if (prev.z !== newZ) {
+          needsRender.current = true;
+          needsBgRender.current = true;
+        }
         return { ...prev, z: newZ };
       });
     } else {
       setCamera(prev => {
         needsRender.current = true;
+        needsBgRender.current = true;
         return { ...prev, x: prev.x - e.deltaX, y: prev.y - e.deltaY };
       });
     }
@@ -337,7 +383,10 @@ export const Canvas: React.FC = () => {
           const scale = dist / initialDist;
           setCamera(prev => {
             const newZ = Math.min(Math.max(0.1, initialZ * scale), 5);
-            if (prev.z !== newZ) needsRender.current = true;
+            if (prev.z !== newZ) {
+              needsRender.current = true;
+              needsBgRender.current = true;
+            }
             return { ...prev, z: newZ };
           });
         }
@@ -463,6 +512,17 @@ export const Canvas: React.FC = () => {
       });
       return;
     }
+
+    if (tool === 'eraser') {
+      const type = useCanvasStore.getState().eraserType;
+      if (type === 'stroke') {
+        isDrawing.current = true;
+        // Create an invisible active stroke to satisfy state
+        activeStrokeRef.current = { color: 'transparent', size: 1, tool, points: [] };
+        if (canvasRef.current) canvasRef.current.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
     
     isDrawing.current = true;
     const wPos = screenToWorld(e.clientX, e.clientY);
@@ -494,6 +554,7 @@ export const Canvas: React.FC = () => {
       setCamera(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
       lastMousePos.current = { x: e.clientX, y: e.clientY };
       needsRender.current = true;
+      needsBgRender.current = true;
     } else if (tool === 'select' && dragInfo.current) {
       const wPos = screenToWorld(e.clientX, e.clientY);
       const dx = wPos.x - dragInfo.current.startWorldX;
@@ -505,6 +566,25 @@ export const Canvas: React.FC = () => {
     } else if (isDrawing.current && activeStrokeRef.current) {
       const wPos = screenToWorld(e.clientX, e.clientY);
       activeStrokeRef.current.points.push({ x: wPos.x, y: wPos.y, pressure: e.pressure || 0.5 });
+      
+      if (tool === 'eraser' && useCanvasStore.getState().eraserType === 'stroke') {
+         const thresholdSq = Math.pow(currentSize * 2 + 5, 2);
+         const strokes = strokesRef.current;
+         const toDelete: number[] = [];
+         strokes.forEach((stroke, idx) => {
+           for (let i = 0; i < stroke.points.length - 1; i++) {
+             if (distToSegmentSquared(wPos, stroke.points[i], stroke.points[i+1]) < thresholdSq) {
+               toDelete.push(idx);
+               break;
+             }
+           }
+         });
+         if (toDelete.length > 0) {
+           useCanvasStore.getState().removeStrokes(notebookId!, toDelete);
+           strokesRef.current = strokesRef.current.filter((_, i) => !toDelete.includes(i));
+         }
+      }
+      
       needsRender.current = true;
     }
   };
@@ -520,6 +600,33 @@ export const Canvas: React.FC = () => {
     if (isDrawing.current) {
       isDrawing.current = false;
       if (activeStrokeRef.current) {
+        if (activeStrokeRef.current.tool === 'eraser') {
+          const type = useCanvasStore.getState().eraserType;
+          if (type === 'lasso') {
+             const polygon = activeStrokeRef.current.points;
+             const strokes = strokesRef.current;
+             const toDelete: number[] = [];
+             strokes.forEach((s, idx) => {
+               if (s.points.some(p => pointInPolygon(p, polygon))) {
+                 toDelete.push(idx);
+               }
+             });
+             if (toDelete.length > 0) {
+               useCanvasStore.getState().removeStrokes(notebookId!, toDelete);
+               strokesRef.current = strokesRef.current.filter((_, i) => !toDelete.includes(i));
+             }
+             activeStrokeRef.current = null;
+             needsRender.current = true;
+             if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
+             return;
+          } else if (type === 'stroke') {
+             activeStrokeRef.current = null;
+             needsRender.current = true;
+             if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
+             return; 
+          }
+        }
+
         strokesRef.current.push(activeStrokeRef.current);
         if (notebookId) {
           useCanvasStore.getState().addStroke(notebookId, activeStrokeRef.current);
@@ -559,17 +666,19 @@ export const Canvas: React.FC = () => {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const bgCanvas = bgCanvasRef.current;
+    if (!canvas || !bgCanvas) return;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const bgCtx = bgCanvas.getContext('2d');
+    if (!ctx || !bgCtx) return;
 
-    const render = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const renderBg = () => {
+      bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
       
-      ctx.save();
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.scale(camera.z, camera.z);
-      ctx.translate(-canvas.width / 2 + camera.x, -canvas.height / 2 + camera.y);
+      bgCtx.save();
+      bgCtx.translate(bgCanvas.width / 2, bgCanvas.height / 2);
+      bgCtx.scale(camera.z, camera.z);
+      bgCtx.translate(-bgCanvas.width / 2 + camera.x, -bgCanvas.height / 2 + camera.y);
 
       const rootStyle = getComputedStyle(document.documentElement);
       const textTertiary = rootStyle.getPropertyValue('--text-tertiary').trim() || '#b2bec3';
@@ -591,23 +700,23 @@ export const Canvas: React.FC = () => {
         const pageY = i * (PAGE_HEIGHT + PAGE_GAP);
         
         // Draw page shadow & background
-        ctx.shadowColor = 'rgba(0,0,0,0.1)';
-        ctx.shadowBlur = 15;
-        ctx.shadowOffsetY = 5;
-        ctx.fillStyle = '#ffffff'; // Pages are always white/off-white in real notebooks
-        ctx.fillRect(-PAGE_WIDTH / 2, pageY, PAGE_WIDTH, PAGE_HEIGHT);
-        ctx.shadowColor = 'transparent';
+        bgCtx.shadowColor = 'rgba(0,0,0,0.1)';
+        bgCtx.shadowBlur = 15;
+        bgCtx.shadowOffsetY = 5;
+        bgCtx.fillStyle = '#ffffff'; // Pages are always white/off-white in real notebooks
+        bgCtx.fillRect(-PAGE_WIDTH / 2, pageY, PAGE_WIDTH, PAGE_HEIGHT);
+        bgCtx.shadowColor = 'transparent';
 
         // Draw Pattern
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(-PAGE_WIDTH / 2, pageY, PAGE_WIDTH, PAGE_HEIGHT);
-        ctx.clip(); // Ensure pattern doesn't bleed out of the page
+        bgCtx.save();
+        bgCtx.beginPath();
+        bgCtx.rect(-PAGE_WIDTH / 2, pageY, PAGE_WIDTH, PAGE_HEIGHT);
+        bgCtx.clip(); // Ensure pattern doesn't bleed out of the page
 
-        ctx.fillStyle = settings.color;
-        ctx.strokeStyle = settings.color;
-        ctx.globalAlpha = settings.opacity;
-        ctx.lineWidth = settings.thickness;
+        bgCtx.fillStyle = settings.color;
+        bgCtx.strokeStyle = settings.color;
+        bgCtx.globalAlpha = settings.opacity;
+        bgCtx.lineWidth = settings.thickness;
 
         const gridSize = 40 / settings.density;
         const startX = -PAGE_WIDTH / 2;
@@ -618,48 +727,58 @@ export const Canvas: React.FC = () => {
         if (settings.pattern === 'dots') {
           for (let x = startX + gridSize; x < endX; x += gridSize) {
             for (let y = startY + gridSize; y < endY; y += gridSize) {
-              ctx.beginPath();
-              ctx.arc(x, y, 1.5 * settings.thickness, 0, Math.PI * 2);
-              ctx.fill();
+              bgCtx.beginPath();
+              bgCtx.arc(x, y, 1.5 * settings.thickness, 0, Math.PI * 2);
+              bgCtx.fill();
             }
           }
         } else if (settings.pattern === 'grid') {
           for (let x = startX + gridSize; x < endX; x += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(x, startY);
-            ctx.lineTo(x, endY);
-            ctx.stroke();
+            bgCtx.beginPath();
+            bgCtx.moveTo(x, startY);
+            bgCtx.lineTo(x, endY);
+            bgCtx.stroke();
           }
           for (let y = startY + gridSize; y < endY; y += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(startX, y);
-            ctx.lineTo(endX, y);
-            ctx.stroke();
+            bgCtx.beginPath();
+            bgCtx.moveTo(startX, y);
+            bgCtx.lineTo(endX, y);
+            bgCtx.stroke();
           }
         } else if (settings.pattern === 'lined') {
           for (let y = startY + gridSize; y < endY; y += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(startX, y);
-            ctx.lineTo(endX, y);
-            ctx.stroke();
+            bgCtx.beginPath();
+            bgCtx.moveTo(startX, y);
+            bgCtx.lineTo(endX, y);
+            bgCtx.stroke();
           }
         }
         
-        ctx.restore();
+        bgCtx.restore();
       }
-      ctx.globalAlpha = 1.0;      
-      ctx.shadowColor = 'transparent';
-      
-      // Draw Strokes
-      drawAllStrokes(ctx);
+      bgCtx.globalAlpha = 1.0;      
+      bgCtx.shadowColor = 'transparent';
+      bgCtx.restore();
+    };
 
+    const renderStrokes = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(camera.z, camera.z);
+      ctx.translate(-canvas.width / 2 + camera.x, -canvas.height / 2 + camera.y);
+      drawAllStrokes(ctx);
       ctx.restore();
     };
 
     let animationFrameId: number;
     const loop = () => {
+      if (needsBgRender.current) {
+        renderBg();
+        needsBgRender.current = false;
+      }
       if (needsRender.current) {
-        render();
+        renderStrokes();
         needsRender.current = false;
       }
       animationFrameId = requestAnimationFrame(loop);
@@ -669,7 +788,10 @@ export const Canvas: React.FC = () => {
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      bgCanvas.width = window.innerWidth;
+      bgCanvas.height = window.innerHeight;
       needsRender.current = true;
+      needsBgRender.current = true;
     };
     window.addEventListener('resize', resize);
     resize();
@@ -685,6 +807,10 @@ export const Canvas: React.FC = () => {
 
   return (
     <div className="canvas-container" onDrop={handleDrop} onDragOver={handleDragOver} onClick={() => setContextMenu(null)}>
+      <canvas
+        ref={bgCanvasRef}
+        style={{ pointerEvents: 'none', position: 'absolute', zIndex: 0 }}
+      />
       <canvas
         ref={canvasRef}
         onPointerDown={handlePointerDown}

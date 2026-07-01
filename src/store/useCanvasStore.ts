@@ -4,6 +4,7 @@ import { temporal } from 'zundo';
 
 export interface StrokePoint { x: number; y: number; pressure: number }
 export type ToolType = 'fountain' | 'gel' | 'highlighter' | 'eraser' | 'pan' | 'text' | 'image' | 'select';
+export type EraserType = 'pixel' | 'stroke' | 'lasso';
 export interface Stroke { points: StrokePoint[]; color: string; size: number; tool: ToolType }
 
 export type ElementType = 'text' | 'image';
@@ -42,6 +43,7 @@ interface CanvasState {
   notebookStrokes: Record<string, Stroke[]>;
   notebookElements: Record<string, CanvasElement[]>;
   addStroke: (notebookId: string, stroke: Stroke) => void;
+  removeStrokes: (notebookId: string, strokeIndices: number[]) => void;
   clearStrokes: (notebookId: string) => void;
   addElement: (notebookId: string, element: CanvasElement) => void;
   updateElement: (notebookId: string, elementId: string, updates: Partial<CanvasElement>) => void;
@@ -55,6 +57,8 @@ interface CanvasState {
   setPenSettings: (updates: Partial<PenSettings>) => void;
   ruler: RulerState;
   setRuler: (updates: Partial<RulerState>) => void;
+  eraserType: EraserType;
+  setEraserType: (type: EraserType) => void;
 }
 
 export const useCanvasStore = create<CanvasState>()(
@@ -67,9 +71,18 @@ export const useCanvasStore = create<CanvasState>()(
         setPenSettings: (updates) => set((state) => ({ penSettings: { ...state.penSettings, ...updates } })),
         ruler: { x: 400, y: 400, rotation: 0, active: false },
         setRuler: (updates) => set((state) => ({ ruler: { ...state.ruler, ...updates } })),
+        eraserType: 'pixel',
+        setEraserType: (type) => set({ eraserType: type }),
         addStroke: (notebookId, stroke) => set((state) => {
           const existing = state.notebookStrokes[notebookId] || [];
           return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: [...existing, stroke] } };
+        }),
+        removeStrokes: (notebookId, strokeIndices) => set((state) => {
+          const existing = state.notebookStrokes[notebookId];
+          if (!existing) return state;
+          // Create a new array excluding the specified indices
+          const filtered = existing.filter((_, i) => !strokeIndices.includes(i));
+          return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: filtered } };
         }),
         clearStrokes: (notebookId) => set((state) => {
           const nextS = { ...state.notebookStrokes };
