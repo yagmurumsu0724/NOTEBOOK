@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Notebook } from '../../../store/useStore';
 import { useStore } from '../../../store/useStore';
 import { GlassCard } from '../../../components/ui/GlassCard';
-import { Edit2, Trash2, Check, X } from 'lucide-react';
+import { Edit2, Trash2, Check, X, Pin } from 'lucide-react';
 import { IconButton } from '../../../components/ui/IconButton';
 
 interface Props {
@@ -96,8 +96,21 @@ export const NotebookCard: React.FC<Props> = ({ notebook, onClick }) => {
       {/* Action Buttons */}
       {!isEditing && isHovered && (
         <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 10 }}>
+          <IconButton 
+            icon={<Pin size={16} fill={notebook.isPinned ? 'currentColor' : 'none'} color={notebook.isPinned ? 'var(--color-lemon)' : undefined} />} 
+            onClick={(e) => { e.stopPropagation(); updateNotebook(notebook.id, { isPinned: !notebook.isPinned }); }} 
+            variant="solid" size="sm" 
+            title={notebook.isPinned ? 'Pini Kaldır' : 'Pinle'}
+          />
           <IconButton icon={<Edit2 size={16} />} onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} variant="solid" size="sm" />
           <IconButton icon={<Trash2 size={16} color="var(--color-sakura)" />} onClick={handleDelete} variant="solid" size="sm" />
+        </div>
+      )}
+
+      {/* Pin indicator */}
+      {notebook.isPinned && !isEditing && !isHovered && (
+        <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 5 }}>
+          <Pin size={14} fill="var(--color-lemon)" color="var(--color-lemon)" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
         </div>
       )}
 

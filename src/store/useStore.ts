@@ -22,6 +22,8 @@ export interface Notebook {
   fontFamily: string;
   icon: string;
   updatedAt: string;
+  tags?: string[];
+  isPinned?: boolean;
 }
 
 export interface Folder {
@@ -58,10 +60,10 @@ const MOCK_FOLDERS: Folder[] = [
 ];
 
 const MOCK_NOTEBOOKS: Notebook[] = [
-  { id: 'n1', title: 'Fizik Notları', folderId: 'f1', coverType: 'color', coverColor: 'var(--color-lavender)', pageStyle: 'grid', fontFamily: 'var(--font-family-base)', icon: '⚛️', updatedAt: '2026-06-29', pageCount: 30 },
-  { id: 'n2', title: 'Günlük', folderId: 'f2', coverType: 'color', coverColor: 'var(--color-mint)', pageStyle: 'lined', fontFamily: 'var(--font-family-base)', icon: '📖', updatedAt: '2026-06-28', pageCount: 30 },
+  { id: 'n1', title: 'Fizik Notları', folderId: 'f1', coverType: 'color', coverColor: 'var(--color-lavender)', pageStyle: 'grid', fontFamily: 'var(--font-family-base)', icon: '⚛️', updatedAt: '2026-06-29', pageCount: 30, tags: ['bilim', 'sınav'], isPinned: true },
+  { id: 'n2', title: 'Günlük', folderId: 'f2', coverType: 'color', coverColor: 'var(--color-mint)', pageStyle: 'lined', fontFamily: 'var(--font-family-base)', icon: '📖', updatedAt: '2026-06-28', pageCount: 30, tags: ['kişisel'] },
   { id: 'n3', title: 'Kalkülüs', folderId: 'f3', coverType: 'color', coverColor: 'var(--color-sky-dark)', pageStyle: 'blank', fontFamily: 'var(--font-family-base)', icon: '📐', updatedAt: '2026-06-27', pageCount: 30 },
-  { id: 'n4', title: 'Hızlı Taslaklar', folderId: null, coverType: 'color', coverColor: 'var(--color-peach)', pageStyle: 'dots', fontFamily: 'var(--font-family-base)', icon: '✏️', updatedAt: '2026-06-29', pageCount: 30 },
+  { id: 'n4', title: 'Hızlı Taslaklar', folderId: null, coverType: 'color', coverColor: 'var(--color-peach)', pageStyle: 'dots', fontFamily: 'var(--font-family-base)', icon: '✏️', updatedAt: '2026-06-29', pageCount: 30, isPinned: true },
 ];
 
 export const useStore = create<AppState>()(
