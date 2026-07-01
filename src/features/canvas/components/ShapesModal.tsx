@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { renderToString } from 'react-dom/server';
 import { 
   Square, Circle, Triangle, Hexagon, Octagon, Pentagon, Diamond, Star, Heart, Cloud, Sun, Moon, Zap,

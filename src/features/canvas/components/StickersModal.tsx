@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { IconButton } from '../../../components/ui/IconButton';
 import { extractedStickers } from './stickers_data';
