@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2, Calendar, ListTodo, Clock } from 'lucide-react';
+import { Plus, Search, Folder as FolderIcon, Star, Home, Brain, Loader2, Calendar, ListTodo, Clock, Settings2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { FolderCard } from './components/FolderCard';
@@ -11,6 +11,7 @@ import { GlassCard } from '../../components/ui/GlassCard';
 import { SemanticSearchEngine, type SearchResult } from '../ai/SemanticSearch';
 import { TasksDashboard } from './components/TasksDashboard';
 import { TimelineView } from './components/TimelineView';
+import { SettingsModal } from './components/SettingsModal';
 import './Dashboard.css';
 
 type ViewMode = 'all' | 'pinned' | 'folder' | 'tag' | 'daily' | 'tasks' | 'timeline';
@@ -19,6 +20,7 @@ export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { folders, notebooks, currentFolderId, searchQuery, setSearchQuery, setCurrentFolder, addFolder, createDailyNote } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('folder');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [semanticResults, setSemanticResults] = useState<SearchResult[]>([]);
@@ -203,7 +205,29 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
 
-        <div className="sidebar-footer">
+        <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', width: '100%', alignItems: 'center' }}>
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            style={{
+              width: '100%',
+              padding: '0.6rem 1rem',
+              borderRadius: '10px',
+              border: '1px solid rgba(0,0,0,0.06)',
+              background: '#fff',
+              color: 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.4rem',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.02)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Settings2 size={16} /> Ayarlar
+          </button>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>🌸 Made with Kawaii</span>
         </div>
       </aside>
@@ -402,6 +426,7 @@ export const Dashboard: React.FC = () => {
       </main>
       
       {isModalOpen && <CreateNotebookModal onClose={() => setIsModalOpen(false)} folderId={viewMode === 'folder' ? currentFolderId : null} />}
+      {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
     </div>
   );
 };

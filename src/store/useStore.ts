@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { SupabaseSync } from '../features/sync/supabaseClient';
 
 export interface PageSettings {
   pattern: 'blank' | 'lined' | 'grid' | 'dots' | 'music' | 'cornell' | 'hexagon' | 'isometric' | 'planner' | 'journal' | 'graph' | 'calligraphy' | 'engineering' | 'storyboard' | 'checklist' | 'kanban' | 'calendar' | 'tracker' | 'recipe' | 'fitness';
@@ -91,25 +92,37 @@ export const useStore = create<AppState>()(
       searchQuery: '',
       setSearchQuery: (query) => set({ searchQuery: query }),
       
-      addNotebook: (notebook) => set((state) => ({
-        notebooks: [...state.notebooks, { ...notebook, id: Date.now().toString(), updatedAt: new Date().toISOString().split('T')[0], pageCount: notebook.pageCount ?? 30 }]
-      })),
-      updateNotebook: (id, updates) => set((state) => ({
-        notebooks: state.notebooks.map(n => n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString().split('T')[0] } : n)
-      })),
-      deleteNotebook: (id) => set((state) => ({
-        notebooks: state.notebooks.filter(n => n.id !== id)
-      })),
+      addNotebook: (notebook) => set((state) => {
+        const newN = { ...notebook, id: Date.now().toString(), updatedAt: new Date().toISOString().split('T')[0], pageCount: notebook.pageCount ?? 30 };
+        SupabaseSync.uploadNotebooks([newN]);
+        return { notebooks: [...state.notebooks, newN] };
+      }),
+      updateNotebook: (id, updates) => set((state) => {
+        const updated = state.notebooks.map(n => n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString().split('T')[0] } : n);
+        const match = updated.find(n => n.id === id);
+        if (match) SupabaseSync.uploadNotebooks([match]);
+        return { notebooks: updated };
+      }),
+      deleteNotebook: (id) => set((state) => {
+        SupabaseSync.deleteNotebook(id);
+        return { notebooks: state.notebooks.filter(n => n.id !== id) };
+      }),
       
-      addFolder: (folder) => set((state) => ({
-        folders: [...state.folders, { ...folder, id: Date.now().toString() }]
-      })),
-      updateFolder: (id, updates) => set((state) => ({
-        folders: state.folders.map(f => f.id === id ? { ...f, ...updates } : f)
-      })),
-      deleteFolder: (id) => set((state) => ({
-        folders: state.folders.filter(f => f.id !== id)
-      })),
+      addFolder: (folder) => set((state) => {
+        const newF = { ...folder, id: Date.now().toString() };
+        SupabaseSync.uploadFolders([newF]);
+        return { folders: [...state.folders, newF] };
+      }),
+      updateFolder: (id, updates) => set((state) => {
+        const updated = state.folders.map(f => f.id === id ? { ...f, ...updates } : f);
+        const match = updated.find(f => f.id === id);
+        if (match) SupabaseSync.uploadFolders([match]);
+        return { folders: updated };
+      }),
+      deleteFolder: (id) => set((state) => {
+        SupabaseSync.deleteFolder(id);
+        return { folders: state.folders.filter(f => f.id !== id) };
+      }),
       
       createDailyNote: () => {
         let dailyNoteId = '';
@@ -151,33 +164,40 @@ export const useStore = create<AppState>()(
             actionItems: []
           };
           
+          SupabaseSync.uploadNotebooks([newNotebook]);
           dailyNoteId = newId;
           return { notebooks: [...state.notebooks, newNotebook] };
         });
         return dailyNoteId;
       },
       
-      toggleTask: (notebookId, taskId) => set((state) => ({
-        notebooks: state.notebooks.map(n => {
+      toggleTask: (notebookId, taskId) => set((state) => {
+        const nextN = state.notebooks.map(n => {
           if (n.id !== notebookId) return n;
-          return {
+          const updatedN = {
             ...n,
             actionItems: (n.actionItems || []).map(t => 
               t.id === taskId ? { ...t, completed: !t.completed } : t
             )
           };
-        })
-      })),
+          SupabaseSync.uploadNotebooks([updatedN]);
+          return updatedN;
+        });
+        return { notebooks: nextN };
+      }),
       
-      deleteTask: (notebookId, taskId) => set((state) => ({
-        notebooks: state.notebooks.map(n => {
+      deleteTask: (notebookId, taskId) => set((state) => {
+        const nextN = state.notebooks.map(n => {
           if (n.id !== notebookId) return n;
-          return {
+          const updatedN = {
             ...n,
             actionItems: (n.actionItems || []).filter(t => t.id !== taskId)
           };
-        })
-      })),
+          SupabaseSync.uploadNotebooks([updatedN]);
+          return updatedN;
+        });
+        return { notebooks: nextN };
+      }),
     }),
     {
       name: 'kawaiinote-app-storage',

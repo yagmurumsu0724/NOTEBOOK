@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
 import { indexedDBStorage } from './indexedDBStorage';
+import { SupabaseSync } from '../features/sync/supabaseClient';
 
 export interface StrokePoint {
   x: number;
@@ -150,12 +151,15 @@ export const useCanvasStore = create<CanvasState>()(
         setEraserType: (type) => set({ eraserType: type }),
         addStroke: (notebookId, stroke) => set((state) => {
           const existing = migrateStrokes(state.notebookStrokes[notebookId] || []);
-          return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: [...existing, stroke] } };
+          const nextStrokes = [...existing, stroke];
+          SupabaseSync.uploadStrokes(notebookId, nextStrokes);
+          return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: nextStrokes } };
         }),
         removeStrokes: (notebookId, strokeIds) => set((state) => {
           const existing = migrateStrokes(state.notebookStrokes[notebookId] || []);
           if (existing.length === 0) return state;
           const filtered = existing.filter(s => !strokeIds.includes(s.id));
+          SupabaseSync.uploadStrokes(notebookId, filtered);
           return { notebookStrokes: { ...state.notebookStrokes, [notebookId]: filtered } };
         }),
         clearStrokes: (notebookId) => set((state) => {
@@ -163,6 +167,7 @@ export const useCanvasStore = create<CanvasState>()(
           delete nextS[notebookId];
           const nextE = { ...state.notebookElements };
           delete nextE[notebookId];
+          SupabaseSync.uploadStrokes(notebookId, []);
           return { notebookStrokes: nextS, notebookElements: nextE };
         }),
         addElement: (notebookId, element) => set((state) => {
